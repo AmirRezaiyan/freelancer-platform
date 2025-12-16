@@ -1,0 +1,13 @@
+Django==4.2.0
+djangorestframework==3.14.0
+django-cors-headers==4.0.0
+djangorestframework-simplejwt==5.3.0
+python-magic==0.4.27
+python-magic-bin==0.4.14  # For Windows
+django-ratelimit==4.0.0
+Pillow==10.0.0
+psycopg2-binary==2.9.6  # For PostgreSQL
+redis==4.5.5  # For caching and rate limiting
+celery==5.2.7  # For async tasks
+whitenoise==6.4.0  # For static files
+gunicorn==20.1.0  # For production WSGI
