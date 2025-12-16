@@ -309,11 +309,9 @@ class ProjectMessageCreateView(generics.CreateAPIView):
         project = serializer.validated_data.get("project")
         sender = self.request.user
 
-        # اگر پروژه هنوز هیچ فریلنسر استخدام‌شده ندارد -> پیام ممنوع
         if not project.hired_freelancer:
             raise PermissionDenied("ارتباط فقط پس از استخدام فعال می‌شود.")
 
-        # فقط کارفرما یا فریلنسر استخدام‌شده می‌توانند پیام ارسال کنند
         if sender != project.client and sender != project.hired_freelancer:
             raise PermissionDenied("شما اجازه ارسال پیام برای این پروژه را ندارید.")
 
