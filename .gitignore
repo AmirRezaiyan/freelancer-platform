@@ -2,13 +2,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-*.pyo
-*.pyd
-
-
+# Virtual environments
 venv/
 .venv/
 env/
+ENV/
 
 
 *.log
@@ -19,32 +17,38 @@ db.sqlite3-journal
 .env.*
 !.env.example
 
-# Django static/media generated files
-staticfiles/
 media/
+staticfiles/
+
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 
 node_modules/
 dist/
 build/
-
-# Vite
 .vite/
 
-
+# Frontend environment files
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+
 
 .vscode/
 .idea/
 *.iml
 
+
 .DS_Store
 Thumbs.db
 
 
-*.log
 *.tmp
 *.temp
 *.swp
