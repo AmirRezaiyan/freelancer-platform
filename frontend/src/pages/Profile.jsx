@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState, useRef } from "react";
 import api from "../api/axios";
 import { AuthContext } from "../context/AuthContext";
 import { formatDateIran } from "../utils/formatters";
+import fetchAllPages from "../utils/fetchAllPages";
 
 function TagInput({ id, value = [], onChange, placeholder = "برای افزودن Enter بزن" }) {
   const [input, setInput] = useState("");
@@ -418,8 +419,7 @@ export default function Profile() {
       setLoadingReviews(true);
       try {
         try {
-          const res = await api.get(`/market/users/${u.id}/ratings/`);
-          const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+          const data = await fetchAllPages(`/market/users/${u.id}/ratings/`);
           
           const reviewsWithDetails = await Promise.all(
             data.map(async (review) => {
@@ -476,8 +476,7 @@ export default function Profile() {
           }
         } catch (err) {
           console.log("Using fallback endpoint for reviews");
-          const res = await api.get(`/market/ratings/?user_to=${u.id}`);
-          const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+          const data = await fetchAllPages("/market/ratings/", { user_to: u.id });
           
           const reviewsWithDetails = await Promise.all(
             data.map(async (review) => {

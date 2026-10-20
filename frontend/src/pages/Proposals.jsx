@@ -8,6 +8,8 @@ export default function Proposals() {
   const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [proposals, setProposals] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [error, setError] = useState(null);
 
   const [query, setQuery] = useState("");
@@ -25,10 +27,11 @@ export default function Proposals() {
       setError(null);
       try {
         api.defaults.withCredentials = true;
-        const res = await api.get("/market/proposals/mine/");
+        const res = await api.get("/market/proposals/mine/", { params: { page } });
         const data = Array.isArray(res.data) ? res.data : (res.data?.results || res.data || []);
         if (!mounted) return;
-        setProposals(data);
+        setProposals((current) => page === 1 ? data : [...current, ...data]);
+        setHasNextPage(Boolean(res.data?.next));
       } catch (err) {
         console.error("fetch proposals error", err);
         setError(err?.response?.data?.detail || err.message || "خطا در بارگذاری پروپوزال‌ها");
@@ -38,7 +41,7 @@ export default function Proposals() {
     };
     load();
     return () => (mounted = false);
-  }, [user]);
+  }, [user, page]);
 
   function getCookie(name) {
     if (typeof document === "undefined") return null;
@@ -223,6 +226,12 @@ export default function Proposals() {
             );
           })}
         </div>
+      )}
+
+      {hasNextPage && !loading && (
+        <button onClick={() => setPage((current) => current + 1)} style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}>
+          بارگذاری پیشنهادهای بیشتر
+        </button>
       )}
 
       {editing && (

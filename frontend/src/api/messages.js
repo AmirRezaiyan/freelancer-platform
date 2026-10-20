@@ -1,8 +1,8 @@
 import api from "./axios";
 
-export async function list(projectId) {
+export async function list(projectId, page = 1) {
   if (!projectId) return [];
-  const res = await api.get(`/market/projects/${projectId}/user_messages/`);
+  const res = await api.get(`/market/projects/${projectId}/user_messages/`, { params: { page } });
   return res.data;
 }
 

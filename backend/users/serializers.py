@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from core.upload_validation import AVATAR_EXTENSIONS, AVATAR_UPLOAD_MAX_BYTES, validate_upload
 from django.utils.translation import gettext_lazy as _
 import json
 import collections.abc
@@ -104,6 +107,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ["email", "password", "user_type"]
 
+    def validate(self, attrs):
+        user = User(email=attrs.get("email"), user_type=attrs.get("user_type"))
+        try:
+            validate_password(attrs["password"], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from None
+        return attrs
+
     def create(self, validated_data):
         password = validated_data.pop("password", None)
         user = User.objects.create_user(password=password, **validated_data)
@@ -126,7 +137,7 @@ class LoginSerializer(serializers.Serializer):
         except User.DoesNotExist:
             raise serializers.ValidationError(_("ایمیل یا رمز عبور اشتباه است"))
 
-        if not user_obj.check_password(password):
+        if not user_obj.is_active or not user_obj.check_password(password):
             raise serializers.ValidationError(_("ایمیل یا رمز عبور اشتباه است"))
 
         attrs["user"] = user_obj
@@ -207,6 +218,19 @@ class UserSerializer(serializers.ModelSerializer):
     def get_avatar_url(self, obj):
         request = self.context.get("request") if isinstance(self.context, dict) else None
         return _clean_avatar_value(getattr(obj, "avatar", None), request=request)
+
+    def validate_avatar(self, value):
+        if value is None:
+            return value
+        try:
+            validate_upload(
+                value,
+                max_bytes=AVATAR_UPLOAD_MAX_BYTES,
+                allowed_extensions=AVATAR_EXTENSIONS,
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from None
+        return value
 
     def _to_mutable_dict(self, data):
         if isinstance(data, dict) and not hasattr(data, "getlist"):

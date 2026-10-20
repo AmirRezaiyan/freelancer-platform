@@ -5,9 +5,9 @@
 <div align="center">
 
 [![React](https://img.shields.io/badge/React-19.2.0-61DAFB?style=flat-square&logo=react)](https://reactjs.org/)
-[![Django](https://img.shields.io/badge/Django-4.2.0-092E20?style=flat-square&logo=django)](https://www.djangoproject.com/)
+[![Django](https://img.shields.io/badge/Django-5.2.18_LTS-092E20?style=flat-square&logo=django)](https://www.djangoproject.com/)
 [![Vite](https://img.shields.io/badge/Vite-7.2.2-646CFF?style=flat-square&logo=vite)](https://vitejs.dev/)
-[![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=flat-square&logo=python)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 [Features](#-features) • [Quick Start](#-quick-start) • [API Docs](#-api-documentation) • [Contributing](#-contributing)
@@ -167,12 +167,12 @@
 ### Backend
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **Django** | 4.2.0 | Web Framework |
-| **Django REST Framework** | 3.14.0 | REST API |
-| **Simple JWT** | 5.3.0 | JWT Authentication |
-| **Django CORS** | 4.0.0 | CORS Management |
-| **Pillow** | 10.0.0 | Image Processing |
-| **Python** | 3.8+ | Language |
+| **Django** | 5.2.18 LTS | Web Framework |
+| **Django REST Framework** | 3.17.2 | REST API |
+| **Simple JWT** | 5.5.1 | JWT Authentication |
+| **Django CORS** | 4.9.0 | CORS Management |
+| **Pillow** | 12.2.0 | Image Processing |
+| **Python** | 3.10+ | Language |
 
 ### Optional (Production)
 - PostgreSQL - Production Database
@@ -185,7 +185,7 @@
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.10 or higher
 - Node.js 16 or higher
 - Git
 
@@ -440,39 +440,31 @@ Authorization: Bearer {access_token}
 
 **Backend** (`.env`):
 ```env
-SECRET_KEY=your-secret-key-here
+DJANGO_ENV=development
+SECRET_KEY=development-only-insecure-key-not-for-production
 DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
-CORS_ALLOWED_ORIGINS=http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CORS_ALLOW_CREDENTIALS=False
 DATABASE_URL=sqlite:///db.sqlite3
 ```
+
+These values are for local development only. Production must set `DJANGO_ENV=production`, a unique high-entropy `SECRET_KEY` of at least 50 characters, `DEBUG=False`, explicit `ALLOWED_HOSTS`, HTTPS `CORS_ALLOWED_ORIGINS`, `CORS_ALLOW_CREDENTIALS=False`, a shared `RATE_LIMIT_CACHE_URL` using Redis, and an absolute `PRIVATE_MEDIA_ROOT` outside the public media directory. The reverse proxy must pass the verified client address as `REMOTE_ADDR`; the application does not trust client-supplied `X-Forwarded-For` for throttling. Do not expose `PRIVATE_MEDIA_ROOT` or `/media/messages/` through a web server.
 
 **Frontend** (`.env.local`):
 ```env
 VITE_API_URL=http://localhost:8000/api
 ```
 
+Set `VITE_API_URL` to the deployed HTTPS API base URL when building the frontend.
+
+Message attachments are limited to 25 MB and validated against file signatures; portfolio images/videos are limited to 50 MB and avatars to 5 MB. SVG is limited to a 2 MB sanitized subset for message and portfolio images; avatars accept raster formats only. Message attachments are stored under `PRIVATE_MEDIA_ROOT` and downloaded through an authenticated participant-only endpoint.
+
+Before deploying the marketplace integrity/storage migrations to a populated database, preflight for non-positive project budgets/bids, minimum budgets greater than maximum budgets, ratings outside 1–5, duplicate same-direction ratings, and multiple accepted proposals per project. Back up and correct data before adding the constraints. Also inventory existing `MEDIA_ROOT/messages/` files, deny public web-server access to that path, and copy retained files into the configured private storage root using their existing relative names. This repository does not automatically move existing media files.
+
 ### Database Setup
 
-**Development (SQLite):**
-```bash
-python manage.py migrate
-```
-
-**Production (PostgreSQL):**
-Update `settings.py`:
-```python
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'freelancer_db',
-        'USER': 'your_user',
-        'PASSWORD': 'your_password',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
-}
-```
+Development defaults to SQLite and accepts `DATABASE_URL=sqlite:///db.sqlite3`. Production requires a PostgreSQL URL, for example `DATABASE_URL=postgresql://user:password@db:5432/freelancer`; the settings parse it without requiring manual source edits. The PostgreSQL driver is included in `requirements.txt`.
 
 ---
 

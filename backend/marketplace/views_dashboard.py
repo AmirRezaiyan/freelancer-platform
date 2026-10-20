@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db.models import Count, Q
 
 from .models import Wallet, Proposal, ProjectMessage, Portfolio, Project, ActivityLog
 from .serializers import PortfolioSerializer, ActivitySerializer
@@ -20,12 +21,13 @@ class ProposalStatsView(APIView):
 
     def get(self, request):
         user = request.user
-        return Response({
-            "total": Proposal.objects.filter(freelancer=user).count(),
-            "pending": Proposal.objects.filter(freelancer=user, status="pending").count(),
-            "accepted": Proposal.objects.filter(freelancer=user, status="accepted").count(),
-            "rejected": Proposal.objects.filter(freelancer=user, status="rejected").count(),
-        })
+        counts = Proposal.objects.filter(freelancer=user).aggregate(
+            total=Count("id"),
+            pending=Count("id", filter=Q(status="pending")),
+            accepted=Count("id", filter=Q(status="accepted")),
+            rejected=Count("id", filter=Q(status="rejected")),
+        )
+        return Response(counts)
 
 
 class UnreadMessagesView(APIView):
@@ -46,27 +48,32 @@ class ProjectStatsView(APIView):
     def get(self, request):
         user = request.user
         if hasattr(user, 'user_type') and user.user_type == "freelancer":
-            total = Project.objects.filter(hired_freelancer=user).count()
-            active = Project.objects.filter(hired_freelancer=user, status="in_progress").count()
-            completed = Project.objects.filter(hired_freelancer=user, status="completed").count()
+            projects = Project.objects.filter(hired_freelancer=user)
         else:
-            total = Project.objects.filter(client=user).count()
-            active = Project.objects.filter(client=user, status="in_progress").count()
-            completed = Project.objects.filter(client=user, status="completed").count()
-        return Response({
-            "total": total,
-            "active": active,
-            "completed": completed,
-        })
+            projects = Project.objects.filter(client=user)
+        counts = projects.aggregate(
+            total=Count("id"),
+            active=Count("id", filter=Q(status="in_progress")),
+            completed=Count("id", filter=Q(status="completed")),
+        )
+        return Response(counts)
 
 
 class PortfolioLimitedView(ListAPIView):
     serializer_class = PortfolioSerializer
     permission_classes = [IsAuthenticated]
 
+    @staticmethod
+    def _limit(request, default):
+        try:
+            requested = int(request.query_params.get("limit", default))
+        except (TypeError, ValueError):
+            return default
+        return min(max(requested, 1), 50)
+
     def get_queryset(self):
-        limit = int(self.request.query_params.get("limit", 3))
-        return Portfolio.objects.filter(freelancer=self.request.user)[:limit]
+        limit = self._limit(self.request, 3)
+        return Portfolio.objects.filter(freelancer=self.request.user).order_by("-created_at", "-pk")[:limit]
 
 
 class RecentActivityView(ListAPIView):
@@ -74,5 +81,5 @@ class RecentActivityView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        limit = int(self.request.query_params.get("limit", 5))
-        return ActivityLog.objects.filter(user=self.request.user)[:limit]
+        limit = PortfolioLimitedView._limit(self.request, 5)
+        return ActivityLog.objects.filter(user=self.request.user).order_by("-created_at", "-pk")[:limit]

@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from .storage import PrivateMessageStorage
 
 class Project(models.Model):
     CATEGORY_CHOICES = [
@@ -18,8 +19,8 @@ class Project(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField()
-    budget_min = models.PositiveIntegerField()
-    budget_max = models.PositiveIntegerField()
+    budget_min = models.PositiveIntegerField(blank=True, null=True)
+    budget_max = models.PositiveIntegerField(blank=True, null=True)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
     skills = models.JSONField(default=list, blank=True)
     client = models.ForeignKey(
@@ -39,6 +40,29 @@ class Project(models.Model):
 
     def __str__(self):
         return self.title
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "-created_at"], name="prj_status_created_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(budget_min__isnull=True) | models.Q(budget_min__gte=1),
+                name="prj_budget_min_positive",
+            ),
+            models.CheckConstraint(
+                check=models.Q(budget_max__isnull=True) | models.Q(budget_max__gte=1),
+                name="prj_budget_max_positive",
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(budget_min__isnull=True)
+                    | models.Q(budget_max__isnull=True)
+                    | models.Q(budget_min__lte=models.F("budget_max"))
+                ),
+                name="prj_budget_bounds_order",
+            ),
+        ]
 
 
 class Proposal(models.Model):
@@ -62,7 +86,13 @@ class Proposal(models.Model):
         return f"Proposal by {self.freelancer.email} for {self.project.title}"
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["project", "freelancer"], name="unique_proposal_per_freelancer_per_project")
+            models.UniqueConstraint(fields=["project", "freelancer"], name="unique_proposal_per_freelancer_per_project"),
+            models.UniqueConstraint(
+                fields=["project"],
+                condition=models.Q(status="accepted"),
+                name="proposal_one_accepted_per_project",
+            ),
+            models.CheckConstraint(check=models.Q(bid_amount__gte=1), name="proposal_bid_min_1"),
         ]
 
 
@@ -70,13 +100,23 @@ class ProjectMessage(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="messages")
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     message = models.TextField(blank=True, null=True)
-    attachment = models.FileField(upload_to='messages/', null=True, blank=True)  
+    attachment = models.FileField(
+        upload_to='messages/',
+        null=True,
+        blank=True,
+        storage=PrivateMessageStorage(),
+    )
     sticker = models.CharField(max_length=150, null=True, blank=True)  
     created_at = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Message by {self.sender} on {self.project.title}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["project", "-created_at"], name="msg_project_created_idx"),
+        ]
 
 
 class Portfolio(models.Model):
@@ -91,7 +131,7 @@ class Portfolio(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Portfolio by {self.freelancer.username}: {self.title}"
+        return f"Portfolio by {self.freelancer.email}: {self.title}"
 
     class Meta:
         ordering = ['-created_at']
@@ -135,6 +175,19 @@ class Rating(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=["to_user", "-created_at"], name="rating_to_created_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "from_user", "to_user"],
+                name="rating_unique_direction",
+            ),
+            models.CheckConstraint(
+                check=models.Q(rating__gte=1, rating__lte=5),
+                name="rating_value_1_5",
+            ),
+        ]
 
     def __str__(self):
         return f"Rating {self.rating} from {self.from_user} to {self.to_user} ({self.project})"

@@ -5,6 +5,7 @@ import { formatDateIran } from "../utils/formatters";
 import UserAvatar from "./UserAvatar";
 import { AuthContext } from "../context/AuthContext";
 import api from "../api/axios";
+import fetchAllPages from "../utils/fetchAllPages";
 
 
 const styles = {
@@ -611,6 +612,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   const [file, setFile] = useState(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [olderPage, setOlderPage] = useState(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -620,17 +623,45 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   const [loadingCounterparty, setLoadingCounterparty] = useState(true);
 
   const [imageViewer, setImageViewer] = useState({ open: false, url: null, name: null });
+  const [attachmentUrls, setAttachmentUrls] = useState({});
 
   const mountedRef = useRef(false);
+  const activeProjectIdRef = useRef(projectId);
+  const attachmentUrlsRef = useRef(new Map());
+  const attachmentRequestsRef = useRef(new Map());
   const pollRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const preserveScrollRef = useRef(null);
 
   const stickers = ["😀", "😂", "😍", "😎", "😭", "😡", "👍", "👎", "❤️", "🔥", "🎉", "💩", "👻", "🤖"];
 
   useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (container && preserveScrollRef.current) {
+      const { scrollHeight, scrollTop } = preserveScrollRef.current;
+      container.scrollTop = scrollTop + container.scrollHeight - scrollHeight;
+      preserveScrollRef.current = null;
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const attachmentUrls = attachmentUrlsRef.current;
+    const attachmentRequests = attachmentRequestsRef.current;
+    activeProjectIdRef.current = projectId;
+    setAttachmentUrls({});
+    attachmentUrls.forEach((url) => URL.revokeObjectURL(url));
+    attachmentUrls.clear();
+    attachmentRequests.clear();
+    return () => {
+      attachmentUrls.forEach((url) => URL.revokeObjectURL(url));
+      attachmentUrls.clear();
+      attachmentRequests.clear();
+    };
+  }, [projectId]);
 
   const loadProjectAndCounterpartyInfo = useCallback(async () => {
     if (!projectId) return;
@@ -674,10 +705,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           let ratingsCount = 0;
           
           try {
-            const ratingsRes = await api.get(`/market/users/${counterpartyId}/ratings/`);
-            const ratingsData = Array.isArray(ratingsRes.data) 
-              ? ratingsRes.data 
-              : (ratingsRes.data?.results || ratingsRes.data || []);
+            const ratingsData = await fetchAllPages(`/market/users/${counterpartyId}/ratings/`);
             
             if (ratingsData.length > 0) {
               const sum = ratingsData.reduce((acc, item) => acc + (Number(item.rating) || 0), 0);
@@ -686,10 +714,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
             }
           } catch (err) {
             try {
-              const altRes = await api.get(`/market/ratings/?user_to=${counterpartyId}`);
-              const altData = Array.isArray(altRes.data) 
-                ? altRes.data 
-                : (altRes.data?.results || altRes.data || []);
+              const altData = await fetchAllPages("/market/ratings/", { user_to: counterpartyId });
               
               if (altData.length > 0) {
                 const sum = altData.reduce((acc, item) => acc + (Number(item.rating) || 0), 0);
@@ -725,6 +750,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   useEffect(() => {
     mountedRef.current = true;
     setMessages([]);
+    setOlderPage(null);
     setProjectInfo(null);
     setCounterpartyInfo(null);
     setCounterpartyRating({ rating: 0, count: 0 });
@@ -754,6 +780,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     const created_at = m.created_at ?? m.createdAt ?? m.created ?? null;
     const attachment = m.attachment ?? m.file ?? null;
     const file_url = m.file_url ?? m.fileUrl ?? m.attachment_url ?? m.attachment_url ?? null;
+    const file_name = m.attachment_name ?? m.file_name ?? (file_url ? String(file_url).split("/").pop() : "فایل");
+    const file_type = m.attachment_type ?? null;
 
     const project_id = m.project ?? m.project_id ?? m.projectId ?? (m.raw_project ? m.raw_project : null) ?? null;
 
@@ -776,18 +804,55 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       sender_avatar: sender_avatar || null,
       attachment,
       file_url: file_url || attachment || null,
+      file_name,
+      file_type,
       project_id, 
       is_mine: !!(myId != null && senderId != null && Number(myId) === Number(senderId)),
       raw: m,
     };
   };
 
+  const loadAttachmentUrl = (url, requestedProjectId) => {
+    if (attachmentUrlsRef.current.has(url)) {
+      return Promise.resolve(attachmentUrlsRef.current.get(url));
+    }
+    if (attachmentRequestsRef.current.has(url)) {
+      return attachmentRequestsRef.current.get(url);
+    }
+
+    const request = api.get(url, { responseType: "blob" }).then((response) => {
+      if (activeProjectIdRef.current !== requestedProjectId) return null;
+      const objectUrl = URL.createObjectURL(response.data);
+      attachmentUrlsRef.current.set(url, objectUrl);
+      if (mountedRef.current) {
+        setAttachmentUrls((current) => ({ ...current, [url]: objectUrl }));
+      }
+      return objectUrl;
+    }).finally(() => {
+      attachmentRequestsRef.current.delete(url);
+    });
+
+    attachmentRequestsRef.current.set(url, request);
+    return request;
+  };
+
+  useEffect(() => {
+    messages.forEach((message) => {
+      if (message.file_url && message.project_id != null && String(message.project_id) === String(projectId)) {
+        loadAttachmentUrl(message.file_url, projectId).catch((error) => {
+          console.error("load message attachment", error);
+        });
+      }
+    });
+  }, [messages, projectId]);
+
   const loadMessages = async (withLoading = true) => {
     if (!projectId) return;
     if (withLoading) setLoading(true);
     try {
-      const res = await MessagesAPI.list(projectId);
+      const res = await MessagesAPI.list(projectId, 1);
       const data = Array.isArray(res) ? res : res?.results ?? res?.data ?? res;
+      if (withLoading && mountedRef.current) setOlderPage(res?.next ? 2 : null);
       const mapped = (data || []).map(mapMessage).filter(Boolean);
 
       if (mountedRef.current) {
@@ -830,13 +895,40 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     }
   };
 
+  const loadOlderMessages = async () => {
+    if (!projectId || !olderPage || loadingOlder) return;
+    setLoadingOlder(true);
+    const container = messagesContainerRef.current;
+    if (container) {
+      preserveScrollRef.current = { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop };
+    }
+    try {
+      const response = await MessagesAPI.list(projectId, olderPage);
+      const olderMessages = (response?.results || []).map(mapMessage).filter(Boolean);
+      setMessages((current) => {
+        const byId = new Map(current.map((message) => [String(message.id), message]));
+        olderMessages.forEach((message) => byId.set(String(message.id), message));
+        return Array.from(byId.values()).sort((left, right) => {
+          const timeDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+          return timeDifference || Number(left.id) - Number(right.id);
+        });
+      });
+      setOlderPage(response?.next ? olderPage + 1 : null);
+    } catch (error) {
+      preserveScrollRef.current = null;
+      console.error("load older messages", error);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    const maxSize = 100 * 1024 * 1024;
+    const maxSize = 25 * 1024 * 1024;
     if (selectedFile.size > maxSize) {
-      alert("حجم فایل انتخابی باید کمتر از ۱۰۰ مگابایت باشد.");
+      alert("حجم فایل انتخابی باید کمتر از ۲۵ مگابایت باشد.");
       e.target.value = "";
       return;
     }
@@ -1030,7 +1122,12 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     <div style={styles.wrap}>
       {renderUserProfileHeader()}
 
-      <div style={styles.messagesContainer}>
+      <div ref={messagesContainerRef} style={styles.messagesContainer}>
+        {olderPage && (
+          <button onClick={loadOlderMessages} disabled={loadingOlder} style={{ alignSelf: "center" }}>
+            {loadingOlder ? "در حال بارگذاری پیام‌های قبلی..." : "بارگذاری پیام‌های قبلی"}
+          </button>
+        )}
         {loading ? (
           <div style={styles.centerMsg}>در حال بارگذاری پیام‌ها...</div>
         ) : messages.length === 0 ? (
@@ -1043,8 +1140,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           </div>
         ) : (
           messages.map((m, idx) => {
-            const fileType = m.file_url ? getFileType(m.file_url) : null;
-            const fileName = m.file_url ? String(m.file_url).split("/").pop() : "فایل";
+            const fileType = m.file_type?.startsWith("image/") ? "image" : getFileType(m.file_name);
+            const fileName = m.file_name || "فایل";
             const key = m.id != null ? `msg-${m.id}` : `tmp-${idx}`;
 
             return (
@@ -1072,13 +1169,16 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                         {fileType === "image" ? (
                           <div style={styles.imageContainer}>
                             <img
-                              src={m.file_url}
+                                src={attachmentUrls[m.file_url] || ""}
                               alt="تصویر"
                               style={styles.attachmentImage}
-                              onClick={() => openImageViewer(m.file_url, fileName)}
+                                onClick={() => {
+                                  const imageUrl = attachmentUrls[m.file_url];
+                                  if (imageUrl) openImageViewer(imageUrl, fileName);
+                                }}
                             />
                             <button
-                              onClick={() => downloadFile(m.file_url, fileName)}
+                              onClick={() => downloadFile(attachmentUrls[m.file_url], fileName)}
                               style={styles.downloadBtn}
                               title="دانلود تصویر"
                             >
@@ -1100,7 +1200,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                             </div>
                             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                               <button
-                                onClick={() => downloadFile(m.file_url, fileName)}
+                                onClick={() => downloadFile(attachmentUrls[m.file_url], fileName)}
                                 style={styles.fileActionBtn}
                                 title="دانلود"
                               >
@@ -1108,7 +1208,10 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                                 <span style={{ fontSize: 11 }}>دانلود</span>
                               </button>
                               <button
-                                onClick={() => window.open(m.file_url, "_blank")}
+                                onClick={() => {
+                                  const fileUrl = attachmentUrls[m.file_url];
+                                  if (fileUrl) window.open(fileUrl, "_blank", "noopener");
+                                }}
                                 style={styles.fileActionBtn}
                                 title="باز کردن"
                               >
@@ -1222,7 +1325,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           type="button"
           onClick={() => fileInputRef.current?.click()}
           style={styles.iconBtn}
-          title="افزودن فایل (زیر ۱۰۰ مگابایت)"
+          title="افزودن فایل (زیر ۲۵ مگابایت)"
         >
           <Paperclip size={20} />
         </button>

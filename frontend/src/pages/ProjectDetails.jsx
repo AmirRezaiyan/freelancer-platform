@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
+import fetchAllPages from "../utils/fetchAllPages";
 import {
   DollarSign,
   Tag,
@@ -570,6 +571,10 @@ export default function ProjectDetails() {
 
   const [project, setProject] = useState(null);
   const [proposals, setProposals] = useState([]);
+  const [totalProposals, setTotalProposals] = useState(0);
+  const [proposalPage, setProposalPage] = useState(1);
+  const [hasMoreProposals, setHasMoreProposals] = useState(false);
+  const [loadingMoreProposals, setLoadingMoreProposals] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasApplied, setHasApplied] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
@@ -696,7 +701,10 @@ export default function ProjectDetails() {
           console.error("Error loading client info:", err);
         }
 
-        const proposalsRes = await api.get(`/market/projects/${id}/proposals/`);
+        const proposalsRes = await api.get(`/market/projects/${id}/proposals/`, { params: { page: 1 } });
+        setHasMoreProposals(Boolean(proposalsRes.data?.next));
+        setTotalProposals(proposalsRes.data?.count ?? proposalsRes.data?.length ?? 0);
+        setProposalPage(1);
         const proposalsData = Array.isArray(proposalsRes.data)
           ? proposalsRes.data
           : (proposalsRes.data?.results || proposalsRes.data || []);
@@ -739,10 +747,7 @@ export default function ProjectDetails() {
 
             if (freelancerId) {
               try {
-                const ratingsRes = await api.get(`/market/users/${freelancerId}/ratings/`);
-                const ratingsData = Array.isArray(ratingsRes.data)
-                  ? ratingsRes.data
-                  : (ratingsRes.data?.results || ratingsRes.data || []);
+                const ratingsData = await fetchAllPages(`/market/users/${freelancerId}/ratings/`);
 
                 if (ratingsData.length > 0) {
                   const sum = ratingsData.reduce((acc, item) => acc + (Number(item.rating) || 0), 0);
@@ -751,10 +756,7 @@ export default function ProjectDetails() {
                 }
               } catch (e1) {
                 try {
-                  const altRes = await api.get(`/market/ratings/?user_to=${freelancerId}`);
-                  const altData = Array.isArray(altRes.data)
-                    ? altRes.data
-                    : (altRes.data?.results || altRes.data || []);
+                  const altData = await fetchAllPages("/market/ratings/", { user_to: freelancerId });
 
                   if (altData.length > 0) {
                     const sum = altData.reduce((acc, item) => acc + (Number(item.rating) || 0), 0);
@@ -786,6 +788,34 @@ export default function ProjectDetails() {
 
     loadProjectData();
   }, [id, userData]);
+
+  const loadMoreProposals = async () => {
+    if (!hasMoreProposals || loadingMoreProposals) return;
+    setLoadingMoreProposals(true);
+    const requestedPage = proposalPage + 1;
+    try {
+      const response = await api.get(`/market/projects/${id}/proposals/`, { params: { page: requestedPage } });
+      const records = response.data?.results || [];
+      setTotalProposals(response.data?.count ?? totalProposals);
+      const enriched = await Promise.all(records.map(async (proposal) => {
+        const freelancerId = resolveEntityId(proposal.freelancer);
+        if (!freelancerId) return proposal;
+        try {
+          const userResponse = await api.get(`/users/${freelancerId}/`);
+          return { ...proposal, freelancer_details: userResponse.data, freelancer_id_resolved: freelancerId };
+        } catch {
+          return { ...proposal, freelancer_id_resolved: freelancerId };
+        }
+      }));
+      setProposals((current) => [...current, ...enriched]);
+      setProposalPage(requestedPage);
+      setHasMoreProposals(Boolean(response.data?.next));
+    } catch (loadError) {
+      console.error("Failed to load more proposals:", loadError);
+    } finally {
+      setLoadingMoreProposals(false);
+    }
+  };
 
   const formatPrice = (value) => {
     if (value == null || value === "") return "—";
@@ -986,7 +1016,10 @@ export default function ProjectDetails() {
         setShowApplyForm(false);
         setForm({ cover_letter: "", bid: "" });
 
-        const proposalsRes = await api.get(`/market/projects/${id}/proposals/`);
+        const proposalsRes = await api.get(`/market/projects/${id}/proposals/`, { params: { page: 1 } });
+        setHasMoreProposals(Boolean(proposalsRes.data?.next));
+        setTotalProposals(proposalsRes.data?.count ?? proposalsRes.data?.length ?? 0);
+        setProposalPage(1);
         const proposalsData = Array.isArray(proposalsRes.data)
           ? proposalsRes.data
           : (proposalsRes.data?.results || proposalsRes.data || []);
@@ -1695,7 +1728,7 @@ export default function ProjectDetails() {
                   color: "#f97316",
                   marginBottom: "5px"
                 }}>
-                  {proposals.length}
+                  {totalProposals}
                 </div>
                 <div style={{
                   fontSize: "12px",
@@ -1709,9 +1742,9 @@ export default function ProjectDetails() {
                     height: "4px",
                     borderRadius: "50%",
                     backgroundColor: "#f97316",
-                    animation: proposals.length > 0 ? "pulse 2s infinite" : "none"
+                    animation: totalProposals > 0 ? "pulse 2s infinite" : "none"
                   }}></div>
-                  {proposals.length > 0 ? "پیشنهاد جدید موجود" : "در انتظار اولین پیشنهاد"}
+                  {totalProposals > 0 ? "پیشنهاد جدید موجود" : "در انتظار اولین پیشنهاد"}
                 </div>
               </div>
             </div>
@@ -2006,8 +2039,8 @@ export default function ProjectDetails() {
                       fontSize: "13px",
                       color: "#cbd5e1"
                     }}>
-                      {proposals.length > 0
-                        ? `${proposals.length} پیشنهاد ثبت شده`
+                      {totalProposals > 0
+                        ? `${totalProposals} پیشنهاد ثبت شده`
                         : "در انتظار اولین پیشنهاد"}
                     </p>
                   </div>
@@ -2387,6 +2420,11 @@ export default function ProjectDetails() {
                       </div>
                     );
                   })}
+                  {hasMoreProposals && (
+                    <button onClick={loadMoreProposals} disabled={loadingMoreProposals} style={{ display: "block", margin: "18px auto", padding: "10px 18px" }}>
+                      {loadingMoreProposals ? "در حال بارگذاری..." : "بارگذاری پیشنهادهای بیشتر"}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

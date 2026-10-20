@@ -10,6 +10,8 @@ export default function Projects() {
   const location = useLocation();
 
   const [projects, setProjects] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
@@ -45,14 +47,16 @@ export default function Projects() {
       try {
         const params = {};
         if (statusFilter) params.status = statusFilter;
+        params.page = page;
         const res = await api.get("/market/projects/", { params });
         if (!mounted) return;
         const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+        setHasNextPage(Boolean(res.data?.next));
         const normalized = data.map((p) => ({
           ...p,
           has_applied: Boolean(p?.has_applied || p?.user_proposal_id),
         }));
-        setProjects(normalized);
+        setProjects((current) => page === 1 ? normalized : [...current, ...normalized]);
 
         if (user) {
           try {
@@ -89,7 +93,7 @@ export default function Projects() {
     };
     load();
     return () => (mounted = false);
-  }, [user, statusFilter]);
+  }, [user, statusFilter, page]);
 
   const skillsList = useMemo(() => {
     const s = new Set();
@@ -459,10 +463,10 @@ export default function Projects() {
               <div style={styles.filterSection}>
                 <h4 style={styles.filterSectionTitle}>وضعیت پروژه</h4>
                 <div style={styles.skillsFilter}>
-                  <button onClick={() => setStatusFilter("")} style={{ ...styles.skillFilterChip, background: !statusFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: !statusFilter ? "#fff" : "#94a3b8" }}>همه</button>
-                  <button onClick={() => setStatusFilter("open")} style={{ ...styles.skillFilterChip, background: statusFilter === "open" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "open" ? "#fff" : "#94a3b8" }}>باز</button>
-                  <button onClick={() => setStatusFilter("in_progress")} style={{ ...styles.skillFilterChip, background: statusFilter === "in_progress" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "in_progress" ? "#fff" : "#94a3b8" }}>در حال انجام</button>
-                  <button onClick={() => setStatusFilter("completed")} style={{ ...styles.skillFilterChip, background: statusFilter === "completed" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "completed" ? "#fff" : "#94a3b8" }}>تمام شده</button>
+                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter(""); }} style={{ ...styles.skillFilterChip, background: !statusFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: !statusFilter ? "#fff" : "#94a3b8" }}>همه</button>
+                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter("open"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "open" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "open" ? "#fff" : "#94a3b8" }}>باز</button>
+                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter("in_progress"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "in_progress" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "in_progress" ? "#fff" : "#94a3b8" }}>در حال انجام</button>
+                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter("completed"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "completed" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "completed" ? "#fff" : "#94a3b8" }}>تمام شده</button>
                 </div>
               </div>
             </div>
@@ -639,6 +643,11 @@ export default function Projects() {
                 </article>
               ))}
             </div>
+          )}
+          {hasNextPage && !loading && (
+            <button onClick={() => setPage((current) => current + 1)} style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}>
+              بارگذاری پروژه‌های بیشتر
+            </button>
           )}
         </main>
       </div>

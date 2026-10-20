@@ -10,7 +10,8 @@ export default function Home() {
     const load = async () => {
       try {
         const res = await api.get("/market/projects/");
-        setRecent(res.data || []);
+        const projects = Array.isArray(res.data) ? res.data : res.data?.results ?? [];
+        setRecent(projects.slice(0, 6));
       } catch (err) {
         console.error(err);
       } finally {

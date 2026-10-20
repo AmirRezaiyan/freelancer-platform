@@ -1,11 +1,14 @@
 import axios from "axios";
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000/api").replace(/\/+$/, "");
+
 const api = axios.create({
-  baseURL: "http://localhost:8000/api",
+  baseURL: API_BASE_URL,
   withCredentials: false,
 });
 
 api.interceptors.request.use((config) => {
+  config.withCredentials = false;
   const token = localStorage.getItem("access_token");
   if (token) {
     config.headers["Authorization"] = `Bearer ${token}`;
@@ -25,11 +28,14 @@ api.interceptors.response.use(
       if (!refresh) return Promise.reject(error);
 
       try {
-        const res = await axios.post("http://localhost:8000/api/token/refresh/", {
+        const res = await axios.post(`${API_BASE_URL}/token/refresh/`, {
           refresh: refresh,
         });
 
         localStorage.setItem("access_token", res.data.access);
+        if (res.data.refresh) {
+          localStorage.setItem("refresh_token", res.data.refresh);
+        }
         originalRequest.headers["Authorization"] = `Bearer ${res.data.access}`;
 
         return api(originalRequest);

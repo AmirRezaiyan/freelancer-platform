@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
+import fetchAllPages from "../utils/fetchAllPages";
 import ChatBox from "../components/ChatBox";
 import { AuthContext } from "../context/AuthContext";
 import { Star, User, Shield, Building, Sparkles, CheckCircle, Award } from "lucide-react";
@@ -228,10 +229,7 @@ export default function Messages() {
       }
       
       try {
-        const ratingsRes = await api.get(`/market/users/${userId}/ratings/`);
-        const ratingsData = Array.isArray(ratingsRes.data) 
-          ? ratingsRes.data 
-          : (ratingsRes.data?.results || ratingsRes.data || []);
+        const ratingsData = await fetchAllPages(`/market/users/${userId}/ratings/`);
         
         if (ratingsData.length > 0) {
           const sum = ratingsData.reduce((acc, item) => acc + (Number(item.rating) || 0), 0);
@@ -240,10 +238,7 @@ export default function Messages() {
         }
       } catch (err) {
         try {
-          const altRes = await api.get(`/market/ratings/?user_to=${userId}`);
-          const altData = Array.isArray(altRes.data) 
-            ? altRes.data 
-            : (altRes.data?.results || altRes.data || []);
+          const altData = await fetchAllPages("/market/ratings/", { user_to: userId });
           
           if (altData.length > 0) {
             const sum = altData.reduce((acc, item) => acc + (Number(item.rating) || 0), 0);
@@ -342,7 +337,7 @@ export default function Messages() {
         try {
           const msgsRes = await api.get(`/market/projects/${proj.id}/user_messages/`);
           const msgs = Array.isArray(msgsRes.data) ? msgsRes.data : (msgsRes.data?.results || msgsRes.data || []);
-          const last = msgs.length ? msgs[msgs.length - 1] : null;
+          const last = msgs.length ? msgs[0] : null;
           
           const counterpartyId = resolveCounterpartyId(proj, userType, userId);
           let counterpartyInfo = null;
