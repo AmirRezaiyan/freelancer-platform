@@ -44,7 +44,7 @@ export default function ProjectEdit() {
           category: res.data.category || "other"
         });
       } catch (err) {
-        console.error("load project error", err);
+        console.error("load project error", err?.response?.status);
         setMessage({ type: "error", text: "خطا در بارگذاری پروژه یا دسترسی ندارید." });
       } finally {
         if (mounted) setLoading(false);
@@ -65,19 +65,19 @@ export default function ProjectEdit() {
       errors.description = "توضیحات پروژه ضروری است";
     }
     
-    const budgetMin = parseFloat(form.budget_min);
-    const budgetMax = parseFloat(form.budget_max);
+    const budgetMin = Number(form.budget_min);
+    const budgetMax = Number(form.budget_max);
     
-    if (isNaN(budgetMin) || budgetMin < 0) {
+    if (!Number.isInteger(budgetMin) || budgetMin < 1) {
       errors.budget_min = "مقدار بودجه باید یک عدد معتبر و مثبت باشد";
     }
     
-    if (isNaN(budgetMax) || budgetMax < 0) {
+    if (!Number.isInteger(budgetMax) || budgetMax < 1) {
       errors.budget_max = "مقدار بودجه باید یک عدد معتبر و مثبت باشد";
     }
     
-    if (!isNaN(budgetMin) && !isNaN(budgetMax) && budgetMin > budgetMax) {
-      errors.budget_max = "حداکثر بودجه باید بیشتر از حداقل بودجه باشد";
+    if (Number.isInteger(budgetMin) && Number.isInteger(budgetMax) && budgetMin > budgetMax) {
+      errors.budget_max = "حداکثر بودجه باید برابر یا بیشتر از حداقل بودجه باشد";
     }
     
     setFormErrors(errors);
@@ -121,7 +121,7 @@ export default function ProjectEdit() {
       }, 1500);
       
     } catch (err) {
-      console.error("update project error", err);
+      console.error("update project error", err?.response?.status);
       let text = "خطا در به‌روزرسانی پروژه";
       const serverData = err?.response?.data;
       
@@ -148,7 +148,7 @@ export default function ProjectEdit() {
   }
 
   if (loading) return (
-    <div style={{
+    <div className="project-edit-page" style={{
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
@@ -162,7 +162,7 @@ export default function ProjectEdit() {
   );
 
   if (!project) return (
-    <div style={{
+    <div className="project-edit-page" style={{
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
@@ -177,7 +177,7 @@ export default function ProjectEdit() {
 
   const clientId = typeof project.client === "number" ? project.client : project.client?.id;
   if (user?.id !== clientId) return (
-    <div style={{
+    <div className="project-edit-page" style={{
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
@@ -191,7 +191,7 @@ export default function ProjectEdit() {
   );
 
   return (
-    <div style={{
+    <div className="project-edit-page" style={{
       backgroundColor: "#000000",
       color: "#ffffff",
       minHeight: "100vh",
@@ -236,7 +236,7 @@ export default function ProjectEdit() {
 
         <form onSubmit={handleSubmit} style={{ direction: "rtl" }}>
           <div style={{ marginBottom: "20px" }}>
-            <label style={{
+            <label htmlFor="edit-project-title" style={{
               display: "block",
               fontSize: "14px",
               fontWeight: "600",
@@ -247,6 +247,7 @@ export default function ProjectEdit() {
               عنوان پروژه
             </label>
             <input
+              id="edit-project-title"
               type="text"
               value={form.title}
               onChange={e => {
@@ -284,7 +285,7 @@ export default function ProjectEdit() {
           </div>
 
           <div style={{ marginBottom: "20px" }}>
-            <label style={{
+            <label htmlFor="edit-project-description" style={{
               display: "block",
               fontSize: "14px",
               fontWeight: "600",
@@ -295,6 +296,7 @@ export default function ProjectEdit() {
               توضیحات پروژه
             </label>
             <textarea
+              id="edit-project-description"
               value={form.description}
               onChange={e => {
                 setForm({...form, description: e.target.value});
@@ -341,7 +343,7 @@ export default function ProjectEdit() {
             marginBottom: "20px"
           }}>
             <div>
-              <label style={{
+              <label htmlFor="edit-project-budget-min" style={{
                 display: "block",
                 fontSize: "14px",
                 fontWeight: "600",
@@ -352,9 +354,10 @@ export default function ProjectEdit() {
                 حداقل بودجه (تومان)
               </label>
               <input
+                id="edit-project-budget-min"
                 type="number"
-                min="0"
-                step="1000"
+                min="1"
+                step="1"
                 value={form.budget_min}
                 onChange={e => {
                   setForm({...form, budget_min: e.target.value});
@@ -396,7 +399,7 @@ export default function ProjectEdit() {
               )}
             </div>
             <div>
-              <label style={{
+              <label htmlFor="edit-project-budget-max" style={{
                 display: "block",
                 fontSize: "14px",
                 fontWeight: "600",
@@ -407,9 +410,10 @@ export default function ProjectEdit() {
                 حداکثر بودجه (تومان)
               </label>
               <input
+                id="edit-project-budget-max"
                 type="number"
-                min="0"
-                step="1000"
+                min="1"
+                step="1"
                 value={form.budget_max}
                 onChange={e => {
                   setForm({...form, budget_max: e.target.value});
@@ -453,7 +457,7 @@ export default function ProjectEdit() {
           </div>
 
           <div style={{ marginBottom: "20px" }}>
-            <label style={{
+            <label htmlFor="edit-project-skills" style={{
               display: "block",
               fontSize: "14px",
               fontWeight: "600",
@@ -464,6 +468,7 @@ export default function ProjectEdit() {
               مهارت‌های مورد نیاز (با کاما جدا کنید)
             </label>
             <input
+              id="edit-project-skills"
               type="text"
               value={form.skills}
               onChange={e => setForm({...form, skills: e.target.value})}
@@ -487,7 +492,7 @@ export default function ProjectEdit() {
           </div>
 
           <div style={{ marginBottom: "28px" }}>
-            <label style={{
+            <label htmlFor="edit-project-category" style={{
               display: "block",
               fontSize: "14px",
               fontWeight: "600",
@@ -498,6 +503,7 @@ export default function ProjectEdit() {
               دسته‌بندی
             </label>
             <select
+              id="edit-project-category"
               value={form.category}
               onChange={e => setForm({...form, category: e.target.value})}
               style={{

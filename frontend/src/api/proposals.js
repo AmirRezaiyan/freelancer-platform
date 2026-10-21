@@ -1,12 +1,9 @@
 import api from "./axios";
+import { buildProposalPayload } from "../utils/proposalPayload";
 
 const ProposalsAPI = {
-  create: async (projectId, price, message) => {
-    const res = await api.post("/market/proposals/", {
-      project: projectId,
-      price,
-      message,
-    });
+  create: async (projectId, bidAmount, message) => {
+    const res = await api.post("/market/proposals/", buildProposalPayload(projectId, bidAmount, message));
 
     return res.data;
   },

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectPaginatedResults } from "../src/utils/collectPaginatedResults.js";
+import { collectPaginatedResults, mergeUniqueRecords } from "../src/utils/collectPaginatedResults.js";
+
+test("merges paginated records without repeating IDs", () => {
+  assert.deepEqual(
+    mergeUniqueRecords([{ id: 1 }, { id: 2 }], [{ id: 2 }, { id: 3 }]),
+    [{ id: 1 }, { id: 2 }, { id: 3 }],
+  );
+});
 
 test("collects every page and removes duplicate project records", async () => {
   const requests = [];

@@ -41,6 +41,14 @@ export async function collectPaginatedResults(fetchPage, { maxPages = 100, signa
   throw new Error(`The API result exceeds the ${maxPages}-page retrieval limit.`);
 }
 
+export function mergeUniqueRecords(existing, incoming) {
+  const merged = [];
+  const seen = new Set();
+  appendUnique(merged, seen, existing);
+  appendUnique(merged, seen, incoming);
+  return merged;
+}
+
 function appendUnique(results, seen, items) {
   for (const item of items) {
     const key = item?.id ?? item?.project?.id ?? item?.project_id;

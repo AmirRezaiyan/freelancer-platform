@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { markAllProjectMessagesRead } from "../src/api/messageState.js";
+import { isUnreadFromOther, markAllProjectMessagesRead } from "../src/api/messageState.js";
+
+test("unread state follows the API sender and read fields", () => {
+  assert.equal(isUnreadFromOther({ sender: 7, read: false }, 4), true);
+  assert.equal(isUnreadFromOther({ sender: 4, read: false }, 4), false);
+  assert.equal(isUnreadFromOther({ sender: 7, read: true }, 4), false);
+});
+
+test("unread state accepts legacy aliases without marking unknown state unread", () => {
+  assert.equal(isUnreadFromOther({ sender_id: "7", is_read: false }, 4), true);
+  assert.equal(isUnreadFromOther({ sender: 7 }, 4), false);
+  assert.equal(isUnreadFromOther(null, 4), false);
+});
 
 test("bulk mark-read resolves only after the API confirms its update count", async () => {
   const calls = [];

@@ -1,6 +1,7 @@
 import React, { useContext, useState } from "react";
 import api from "../api/axios";
 import { AuthContext } from "../context/auth-context";
+import { buildProposalPayload } from "../utils/proposalPayload";
 
 
 export default function ProposalForm({ projectId, onSuccess }) {
@@ -14,20 +15,16 @@ export default function ProposalForm({ projectId, onSuccess }) {
     e?.preventDefault();
     setError("");
     if (!user) return setError("برای ارسال پیشنهاد ابتدا وارد شوید.");
-    if (!price || isNaN(price)) return setError("قیمت معتبر وارد کنید.");
+    if (!Number.isInteger(Number(price)) || Number(price) < 1) return setError("قیمت معتبر وارد کنید.");
+    if (!message.trim()) return setError("پیام پیشنهاد را وارد کنید.");
 
     setSending(true);
     try {
-      const res = await api.post("/market/proposals/create/", {
-        project: projectId,
-        message,
-        bid: Number(price),          
-      });
+      const res = await api.post("/market/proposals/create/", buildProposalPayload(projectId, price, message.trim()));
       setMessage("");
       setPrice("");
       if (onSuccess) onSuccess(res.data);
     } catch (err) {
-      console.error(err);
       const status = err?.response?.status;
       if (status === 403 || status === 429) {
         setError(err?.response?.data?.detail || "شما به حد مجاز ارسال رسیده‌اید. برای ارسال بیشتر باید پلن ارتقا دهید.");

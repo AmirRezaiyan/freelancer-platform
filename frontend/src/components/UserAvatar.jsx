@@ -1,4 +1,5 @@
 import React from "react";
+import ResilientImage from "./ResilientImage";
 
 export default function UserAvatar({ src, size = 40, alt = "user", onClick }) {
   const style = {
@@ -20,8 +21,5 @@ export default function UserAvatar({ src, size = 40, alt = "user", onClick }) {
     </svg>
   );
 
-  if (src) {
-    return <img src={src} alt={alt} style={style} onClick={onClick} />;
-  }
-  return <div style={{ ...style, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClick}>{placeholder}</div>;
+  return <ResilientImage src={src} alt={alt} style={style} fallback={placeholder} onClick={onClick} />;
 }

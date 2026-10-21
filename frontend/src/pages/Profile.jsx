@@ -3,12 +3,11 @@ import api from "../api/axios";
 import { AuthContext } from "../context/auth-context";
 import { formatDateIran } from "../utils/formatters";
 import fetchAllPages from "../utils/fetchAllPages";
+import ResilientImage from "../components/ResilientImage";
 
 function TagInput({ id, value = [], onChange, placeholder = "برای افزودن Enter بزن" }) {
   const [input, setInput] = useState("");
   const inputRef = useRef(null);
-
-  useEffect(() => {}, [value]);
 
   const addTag = (tag) => {
     const t = tag.trim();
@@ -176,8 +175,6 @@ function SelectInput({ id, value, onChange, options, placeholder }) {
 }
 
 export default function Profile() {
-  console.log("🔷 Profile rendered", new Date().toISOString());
-
   const { user, setUser } = useContext(AuthContext);
 
   const [form, setForm] = useState({
@@ -430,7 +427,7 @@ export default function Profile() {
                   const userRes = await api.get(`/users/${review.from_user}/`);
                   enrichedReview.from_user_details = userRes.data;
                 } catch (err) {
-                  console.error(`Error loading user details for user ${review.from_user}:`, err);
+                  console.error(`Error loading user details for user ${review.from_user}:`, err?.response?.status);
                 }
               }
               
@@ -440,7 +437,7 @@ export default function Profile() {
                   const userRes = await api.get(`/users/${userId}/`);
                   enrichedReview.from_user_details = userRes.data;
                 } catch (err) {
-                  console.error(`Error loading user details from URL ${review.from_user}:`, err);
+                  console.error(`Error loading user details from URL ${review.from_user}:`, err?.response?.status);
                 }
               }
               
@@ -458,7 +455,7 @@ export default function Profile() {
                     : null;
                 }
               } catch (err) {
-                console.error(`Error loading project details for review ${review.id}:`, err);
+                console.error(`Error loading project details for review ${review.id}:`, err?.response?.status);
                 enrichedReview.project_title = `پروژه #${review.project}`;
               }
               
@@ -475,7 +472,6 @@ export default function Profile() {
             setAverageRating(0);
           }
         } catch {
-          console.log("Using fallback endpoint for reviews");
           const data = await fetchAllPages("/market/ratings/", { user_to: u.id });
           
           const reviewsWithDetails = await Promise.all(
@@ -487,7 +483,7 @@ export default function Profile() {
                   const userRes = await api.get(`/users/${review.from_user}/`);
                   enrichedReview.from_user_details = userRes.data;
                 } catch (err) {
-                  console.error(`Error loading user details for user ${review.from_user}:`, err);
+                  console.error(`Error loading user details for user ${review.from_user}:`, err?.response?.status);
                 }
               }
               
@@ -500,7 +496,7 @@ export default function Profile() {
                     : null;
                 }
               } catch (err) {
-                console.error(`Error loading project details for review ${review.id}:`, err);
+                console.error(`Error loading project details for review ${review.id}:`, err?.response?.status);
                 enrichedReview.project_title = `پروژه #${review.project}`;
               }
               
@@ -518,7 +514,7 @@ export default function Profile() {
           }
         }
       } catch (err) {
-        console.error("Error loading reviews:", err);
+        console.error("Error loading reviews:", err?.response?.status);
         setReviews([]);
         setAverageRating(0);
       } finally {
@@ -816,8 +812,6 @@ export default function Profile() {
       const res = await api.put("/users/me/", fd);
 
       const returnedUser = res?.data?.user ?? res?.data ?? null;
-      console.log("Profile PUT response:", res?.data);
-
       if (returnedUser && setUser) {
         setUser(returnedUser);
       }
@@ -836,7 +830,7 @@ export default function Profile() {
         setPreview(returnedUser?.avatar || null);
       }
     } catch (err) {
-      console.error("Profile submit error:", err);
+      console.error("Profile submit error:", err?.response?.status);
       const serverData = err?.response?.data;
       let errorMessage = "ذخیره‌سازی ناموفق بود.";
       
@@ -888,7 +882,7 @@ export default function Profile() {
   };
 
   return (
-    <div style={pageStyles.container}>
+    <div className="profile-page" style={pageStyles.container}>
       <div style={pageStyles.header}>
         <h2 style={pageStyles.title}>پروفایل من</h2>
         <div style={pageStyles.userTypeBadge}>
@@ -896,11 +890,11 @@ export default function Profile() {
         </div>
       </div>
 
-      <form onSubmit={submit} style={pageStyles.form} dir="rtl">
-        <div style={pageStyles.leftCol}>
-          <div style={pageStyles.avatarCard}>
+      <form className="profile-form" onSubmit={submit} style={pageStyles.form} dir="rtl">
+        <div className="profile-sidebar" style={pageStyles.leftCol}>
+          <div className="profile-avatar-card" style={pageStyles.avatarCard}>
             <div style={pageStyles.avatarWrap}>
-              <img src={preview || placeholderSvg} alt="avatar" style={pageStyles.avatar} />
+              <ResilientImage src={preview || placeholderSvg} alt="آواتار" style={pageStyles.avatar} />
             </div>
 
             <div style={pageStyles.avatarActions}>
@@ -917,7 +911,7 @@ export default function Profile() {
             </div>
           </div>
 
-          <div style={pageStyles.infoCard}>
+          <div className="profile-info-card" style={pageStyles.infoCard}>
             <div style={pageStyles.infoRow}>
               <div style={pageStyles.infoLabel}>📧 ایمیل</div>
               <div style={pageStyles.infoValue}>{u.email}</div>
@@ -948,7 +942,7 @@ export default function Profile() {
             )}
           </div>
 
-          <div style={pageStyles.reviewsCard}>
+          <div className="profile-reviews-card" style={pageStyles.reviewsCard}>
             <div style={pageStyles.reviewsHeader}>
               <h3 style={pageStyles.reviewsTitle}>⭐ نظرات و امتیازها</h3>
               {averageRating > 0 && (
@@ -975,7 +969,7 @@ export default function Profile() {
                   const avatarSrc = extractUserAvatar(review);
                   
                   return (
-                    <div key={idx} style={pageStyles.reviewItem}>
+                    <div key={idx} className="profile-review-item" style={pageStyles.reviewItem}>
                       <div style={pageStyles.reviewHeader}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <img
@@ -995,9 +989,9 @@ export default function Profile() {
                             }}
                           />
                           <div>
-                            <div style={pageStyles.reviewerName}>
+                            <div className="profile-reviewer-name" style={pageStyles.reviewerName}>
                               {reviewerName}
-                              <span style={{ 
+                              <span className="profile-reviewer-role" style={{
                                 fontSize: 12, 
                                 color: userType === "کارفرما" ? "#8b5cf6" : userType === "فریلنسر" ? "#3b82f6" : "#64748b", 
                                 marginRight: 8, 
@@ -1007,13 +1001,13 @@ export default function Profile() {
                                 ({userType})
                               </span>
                             </div>
-                            <div style={pageStyles.reviewDate}>{formatDateIran(review.created_at)}</div>
+                            <div className="profile-review-date" style={pageStyles.reviewDate}>{formatDateIran(review.created_at)}</div>
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 2 }}>{renderStars(review.rating)}</div>
                       </div>
-                      {review.review && <p style={pageStyles.reviewText}>{review.review}</p>}
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+                      {review.review && <p className="profile-review-text" style={pageStyles.reviewText}>{review.review}</p>}
+                      <div className="profile-review-project" style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
                         <div>
                           پروژه: <strong>{review.project_title || `پروژه #${review.project}`}</strong>
                         </div>
@@ -1027,13 +1021,13 @@ export default function Profile() {
           </div>
         </div>
 
-        <div style={pageStyles.rightCol}>
-          <div style={pageStyles.card}>
-            <div style={pageStyles.sectionTitle}>👤 اطلاعات شخصی</div>
+        <div className="profile-fields" style={pageStyles.rightCol}>
+          <div className="profile-edit-card" style={pageStyles.card}>
+            <div className="profile-section-title" style={pageStyles.sectionTitle}>👤 اطلاعات شخصی</div>
             
             <div style={pageStyles.rowTwo}>
               <div style={{ flex: 1 }}>
-                <label style={pageStyles.label}>نام</label>
+                <label htmlFor="first_name" style={pageStyles.label}>نام</label>
                 <input 
                   id="first_name" 
                   name="first_name" 
@@ -1043,7 +1037,7 @@ export default function Profile() {
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={pageStyles.label}>نام خانوادگی</label>
+                <label htmlFor="last_name" style={pageStyles.label}>نام خانوادگی</label>
                 <input 
                   id="last_name" 
                   name="last_name" 
@@ -1054,7 +1048,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <label style={pageStyles.label}>📱 شماره تماس</label>
+            <label htmlFor="phone" style={pageStyles.label}>📱 شماره تماس</label>
             <input 
               id="phone" 
               name="phone" 
@@ -1064,8 +1058,9 @@ export default function Profile() {
               placeholder="مثال: 09123456789" 
             />
 
-            <label style={pageStyles.label}>📝 بیوگرافی / درباره من</label>
+            <label htmlFor="bio" style={pageStyles.label}>📝 بیوگرافی / درباره من</label>
             <textarea 
+              id="bio"
               name="bio" 
               value={form.bio} 
               onChange={handleInputChange} 
@@ -1076,11 +1071,11 @@ export default function Profile() {
 
             {isFreelancer && (
               <>
-                <div style={pageStyles.sectionTitle}>💼 اطلاعات فریلنسری</div>
+                <div className="profile-section-title" style={pageStyles.sectionTitle}>💼 اطلاعات فریلنسری</div>
                 
                 <div style={pageStyles.rowTwo}>
                   <div style={{ flex: 1 }}>
-                    <label style={pageStyles.labelSmall}>🛠️ مهارت‌های تخصصی</label>
+                    <label htmlFor="skills-input" style={pageStyles.labelSmall}>🛠️ مهارت‌های تخصصی</label>
                     <TagInput 
                       id="skills-input" 
                       value={form.skills} 
@@ -1089,8 +1084,9 @@ export default function Profile() {
                     />
                   </div>
                   <div style={{ width: 140 }}>
-                    <label style={pageStyles.labelSmall}>📅 سال‌های تجربه</label>
+                    <label htmlFor="experience_years" style={pageStyles.labelSmall}>📅 سال‌های تجربه</label>
                     <input 
+                      id="experience_years"
                       name="experience_years" 
                       value={form.experience_years} 
                       onChange={handleInputChange} 
@@ -1100,7 +1096,7 @@ export default function Profile() {
                   </div>
                 </div>
 
-                <label style={pageStyles.label}>🌐 زبان‌های مسلط</label>
+                <label htmlFor="languages-input" style={pageStyles.label}>🌐 زبان‌های مسلط</label>
                 <TagInput 
                   id="languages-input" 
                   value={form.languages} 
@@ -1112,9 +1108,9 @@ export default function Profile() {
 
             {isClient && (
               <>
-                <div style={pageStyles.sectionTitle}>🏢 اطلاعات شرکت</div>
+                <div className="profile-section-title" style={pageStyles.sectionTitle}>🏢 اطلاعات شرکت</div>
                 
-                <label style={pageStyles.label}>🏷️ زمینه‌های فعالیت</label>
+                <label htmlFor="business-fields-input" style={pageStyles.label}>🏷️ زمینه‌های فعالیت</label>
                 <TagInput 
                   id="business-fields-input" 
                   value={form.business_fields} 
@@ -1124,7 +1120,7 @@ export default function Profile() {
 
                 <div style={pageStyles.rowTwo}>
                   <div style={{ flex: 1 }}>
-                    <label style={pageStyles.labelSmall}>📏 اندازه شرکت</label>
+                    <label htmlFor="company-size" style={pageStyles.labelSmall}>📏 اندازه شرکت</label>
                     <SelectInput
                       id="company-size"
                       name="company_size"
@@ -1139,8 +1135,9 @@ export default function Profile() {
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={pageStyles.labelSmall}>🌐 وبسایت شرکت</label>
+                    <label htmlFor="website" style={pageStyles.labelSmall}>🌐 وبسایت شرکت</label>
                     <input 
+                      id="website"
                       name="website" 
                       value={form.website} 
                       onChange={handleInputChange} 
@@ -1150,8 +1147,9 @@ export default function Profile() {
                   </div>
                 </div>
 
-                <label style={pageStyles.label}>📋 درباره شرکت</label>
+                <label htmlFor="company-description" style={pageStyles.label}>📋 درباره شرکت</label>
                 <textarea 
+                  id="company-description"
                   name="company_description" 
                   value={form.company_description} 
                   onChange={handleInputChange} 

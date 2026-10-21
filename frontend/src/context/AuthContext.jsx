@@ -17,8 +17,7 @@ export default function AuthProvider({ children }) {
     try {
       const res = await api.get("/users/me/");
       setUser(res.data);
-    } catch (err) {
-      console.warn("Auth: fetchMe failed", err);
+    } catch {
       setUser(null);
     } finally {
       setLoading(false);
@@ -35,17 +34,15 @@ export default function AuthProvider({ children }) {
       setUser(userData);
       return { success: true, user: userData };
     } catch (err) {
-      console.error("Auth: login failed", err);
       return { success: false, error: err.response?.data || err.message };
     }
   };
 
-  const register = async (email, password, username, user_type) => {
+  const register = async (email, password, user_type) => {
     try {
-      const data = await AuthAPI.register(email, password, username, user_type);
+      const data = await AuthAPI.register(email, password, user_type);
       return { success: true, data };
     } catch (err) {
-      console.error("Auth: register failed", err);
       return { success: false, error: err.response?.data || err.message };
     }
   };

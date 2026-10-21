@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useRef, useState, useContext } from "react";
 import api from "../api/axios";
 import { proposalDetailPath } from "../api/paths";
 import { Link } from "react-router-dom";
 import { AuthContext } from "../context/auth-context";
 import { formatCurrencyToToman, formatDateIran } from "../utils/formatters";
+import { mergeUniqueRecords } from "../utils/collectPaginatedResults";
 
 export default function Proposals() {
   const { user } = useContext(AuthContext);
@@ -11,7 +12,9 @@ export default function Proposals() {
   const [proposals, setProposals] = useState([]);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const loadingMoreRef = useRef(false);
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState(""); 
@@ -28,26 +31,47 @@ export default function Proposals() {
   
   useEffect(() => {
     let mounted = true;
+    const controller = new AbortController();
     const load = async () => {
       setLoading(true);
       setError(null);
       try {
         api.defaults.withCredentials = true;
-        const res = await api.get("/market/proposals/mine/", { params: { page } });
+        const res = await api.get("/market/proposals/mine/", {
+          params: { page },
+          signal: controller.signal,
+        });
         const data = Array.isArray(res.data) ? res.data : (res.data?.results || res.data || []);
         if (!mounted) return;
-        setProposals((current) => page === 1 ? data : [...current, ...data]);
+        setProposals((current) => mergeUniqueRecords(page === 1 ? [] : current, data));
         setHasNextPage(Boolean(res.data?.next));
       } catch (err) {
-        console.error("fetch proposals error", err);
-        setError(err?.response?.data?.detail || err.message || "خطا در بارگذاری پروپوزال‌ها");
+        if (!mounted || controller.signal.aborted) return;
+        console.error("fetch proposals error", err?.response?.status);
+        setError(err?.response?.data?.detail || err.message || "بارگذاری پیشنهادها انجام نشد.");
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          setLoadingMore(false);
+          loadingMoreRef.current = false;
+        }
       }
     };
     load();
-    return () => (mounted = false);
-  }, [user, page]);
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
+  }, [user?.id, page]);
+
+  useEffect(() => {
+    if (!editing) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && !saving) setEditing(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editing, saving]);
 
   function getCookie(name) {
     if (typeof document === "undefined") return null;
@@ -56,8 +80,9 @@ export default function Proposals() {
   }
 
   async function handleWithdraw(id) {
-    if (!window.confirm("آیا می‌خواهید این پروپوزال را پس بگیرید؟")) return;
+    if (!window.confirm("آیا می‌خواهید این پیشنهاد را پس بگیرید؟")) return;
     setWithdrawingId(id);
+    setError(null);
     try {
       api.defaults.withCredentials = true;
       const csrftoken = getCookie("csrftoken");
@@ -67,9 +92,8 @@ export default function Proposals() {
       await api.delete(proposalDetailPath(id), { headers });
       setProposals(prev => prev.filter(p => p.id !== id));
     } catch (err) {
-      console.error("withdraw error", err);
-      const msg = err?.response?.data?.detail || err?.message || "خطا در پس گرفتن پروپوزال";
-      alert(msg);
+      const msg = err?.response?.data?.detail || err?.message || "پس‌گرفتن پیشنهاد انجام نشد.";
+      setError(msg);
     } finally {
       setWithdrawingId(null);
     }
@@ -81,7 +105,17 @@ export default function Proposals() {
 
   async function saveEdit() {
     if (!editing) return;
+    if (!editing.cover_letter.trim()) {
+      setError("متن پیشنهاد الزامی است.");
+      return;
+    }
+    const bidAmount = Number(editing.bid);
+    if (!Number.isInteger(bidAmount) || bidAmount < 1) {
+      setError("مبلغ پیشنهاد باید عدد صحیح و مثبت باشد.");
+      return;
+    }
     setSaving(true);
+    setError(null);
     try {
       api.defaults.withCredentials = true;
       const csrftoken = getCookie("csrftoken");
@@ -89,9 +123,8 @@ export default function Proposals() {
       if (csrftoken) headers["X-CSRFToken"] = csrftoken;
 
       const payload = {
-        message: editing.cover_letter,
-        bid_amount: editing.bid,
-        bid: editing.bid
+        message: editing.cover_letter.trim(),
+        bid_amount: bidAmount
       };
 
       const res = await api.patch(proposalDetailPath(editing.id), payload, { headers });
@@ -99,9 +132,8 @@ export default function Proposals() {
       setProposals(prev => prev.map(p => p.id === editing.id ? { ...p, ...updated } : p));
       setEditing(null);
     } catch (err) {
-      console.error("save edit error", err);
       const msg = err?.response?.data?.detail || err?.message || "خطا در ذخیره تغییرات";
-      alert(msg);
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -115,20 +147,22 @@ export default function Proposals() {
   });
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
+    <div className="proposals-page" style={styles.container}>
+      <div className="proposals-header" style={styles.header}>
         <div>
-          <h2 style={styles.title}>پروپوزال‌های من</h2>
-          <p style={styles.subtitle}>لیست پیشنهاد‌های ارسالی شما برای پروژه‌ها</p>
+          <h2 style={styles.title}>پیشنهادهای من</h2>
+          <p style={styles.subtitle}>پیشنهادهایی که برای پروژه‌ها فرستاده‌اید.</p>
         </div>
         <div style={styles.headerControls}>
           <input 
+            aria-label="جستجو در پیشنهادها"
             placeholder="جستجو در عنوان یا متن..." 
             value={query} 
             onChange={e => setQuery(e.target.value)} 
             style={styles.searchInput} 
           />
           <select 
+            aria-label="فیلتر وضعیت پیشنهاد"
             value={statusFilter} 
             onChange={e => setStatusFilter(e.target.value)} 
             style={styles.select}
@@ -141,29 +175,30 @@ export default function Proposals() {
         </div>
       </div>
 
-      {error && <div style={styles.error}>{error}</div>}
+      {error && <div className="proposals-error" role="alert" style={styles.error}>{error}</div>}
 
       {loading ? (
-        <div style={styles.loading}>
+        <div className="proposals-loading" role="status" style={styles.loading}>
           <div style={styles.spinner} />
           در حال بارگذاری...
         </div>
       ) : shown.length === 0 ? (
-        <div style={styles.empty}>
+        <div className="proposals-empty" style={styles.empty}>
           <div style={styles.emptyIcon}>📭</div>
-          <h3 style={styles.emptyTitle}>پروپوزالی پیدا نشد</h3>
-          <p style={styles.emptyText}>هنوز پیشنهادی ارسال نکرده‌اید. برای دیدن پروژه‌ها روی دکمه زیر کلیک کنید.</p>
-          <Link to="/projects" style={styles.cta}>مشاهده پروژه‌ها</Link>
+          <h3 style={styles.emptyTitle}>پیشنهادی برای نمایش نیست</h3>
+          <p style={styles.emptyText}>برای پیدا کردن فرصت‌های تازه، پروژه‌ها را بررسی کنید.</p>
+          <Link to="/dashboard/projects" style={styles.cta}>مشاهده پروژه‌ها</Link>
         </div>
       ) : (
-        <div style={styles.list}>
+        <div className="proposal-list" style={styles.list}>
           {shown.map(p => {
             const status = (p.status || p.state || 'pending').toLowerCase();
             const isPending = status === 'pending';
             const isAccepted = status === 'accepted';
+            const canWithdraw = isPending;
             
             return (
-              <div key={p.id} style={styles.card}>
+              <div key={p.id} className="proposal-card" style={styles.card}>
                 <div style={styles.cardHeader}>
                   <div>
                     <div style={styles.projectTitle}>{p.project?.title || p.project_title || '—'}</div>
@@ -194,17 +229,17 @@ export default function Proposals() {
 
                       <button 
                         onClick={() => handleWithdraw(p.id)} 
-                        disabled={withdrawingId === p.id || isAccepted}
+                        disabled={withdrawingId === p.id || !canWithdraw}
                         style={{
                           ...styles.withdrawBtn,
-                          ...(isAccepted && styles.withdrawBtnDisabled)
+                          ...(!canWithdraw ? styles.withdrawBtnDisabled : {})
                         }}
                       >
                         {withdrawingId === p.id 
                           ? 'در حال لغو...' 
                           : isAccepted 
-                            ? 'غیرقابل پس‌گیری' 
-                            : 'پس گرفتن'
+                            ? 'پذیرفته‌شده'
+                            : canWithdraw ? 'پس گرفتن' : 'ردشده'
                         }
                       </button>
                     </div>
@@ -235,27 +270,40 @@ export default function Proposals() {
       )}
 
       {hasNextPage && !loading && (
-        <button onClick={() => setPage((current) => current + 1)} style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}>
-          بارگذاری پیشنهادهای بیشتر
+        <button
+          onClick={() => {
+            if (loadingMoreRef.current) return;
+            loadingMoreRef.current = true;
+            setLoadingMore(true);
+            setPage((current) => current + 1);
+          }}
+          disabled={loadingMore}
+          style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}
+        >
+          {loadingMore ? "در حال بارگذاری..." : "بارگذاری پیشنهادهای بیشتر"}
         </button>
       )}
 
       {editing && (
-        <div style={styles.modalWrap}>
-          <div style={styles.modalBackdrop} onClick={() => setEditing(null)} />
-          <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>ویرایش پیشنهاد</h3>
-            <textarea 
+        <div className="proposal-edit-overlay" style={styles.modalWrap}>
+          <div className="proposal-edit-backdrop" style={styles.modalBackdrop} onClick={() => !saving && setEditing(null)} />
+          <div className="proposal-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="proposal-edit-title" style={styles.modal}>
+            <h3 id="proposal-edit-title" style={styles.modalTitle}>ویرایش پیشنهاد</h3>
+            <label className="proposal-edit-label" htmlFor="proposal-edit-message">متن پیشنهاد</label>
+            <textarea
+              id="proposal-edit-message"
               rows={6} 
               value={editing.cover_letter} 
               onChange={e => setEditing(prev => ({ ...prev, cover_letter: e.target.value }))} 
               style={styles.textarea} 
             />
-            <input 
+            <label className="proposal-edit-label" htmlFor="proposal-edit-bid">مبلغ پیشنهادی (تومان)</label>
+            <input
+              id="proposal-edit-bid"
               value={editing.bid} 
               onChange={e => setEditing(prev => ({ ...prev, bid: e.target.value }))} 
               style={styles.input} 
-              placeholder="مبلغ پیشنهادی (تومان)" 
+              inputMode="numeric"
             />
 
             <div style={styles.modalActions}>
@@ -279,16 +327,15 @@ export default function Proposals() {
 
 function StatusBadge({ status }) {
   const s = (status || '').toLowerCase();
-  const map = {
-    pending: { text: 'در انتظار', bg: '#f59e0b', color: '#1f2937' },
-    accepted: { text: 'پذیرفته‌شده', bg: '#10b981', color: '#04260f' },
-    rejected: { text: 'رد شده', bg: '#ef4444', color: '#fff' }
+  const labels = {
+    pending: "در انتظار",
+    accepted: "پذیرفته‌شده",
+    rejected: "رد شده",
   };
-  const cfg = map[s] || { text: status || 'نامشخص', bg: '#94a3b8', color: '#fff' };
-  
+
   return (
-    <span style={styles.badge(cfg.bg, cfg.color)}>
-      {cfg.text}
+    <span className={`proposal-status proposal-status-${s || "unknown"}`}>
+      {labels[s] || status || "نامشخص"}
     </span>
   );
 }
@@ -523,10 +570,10 @@ const styles = {
   },
   
   withdrawBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.62,
     cursor: 'not-allowed',
-    border: `1px solid rgba(239,68,68,0.06)`,
-    color: 'rgba(252,165,165,0.5)'
+    border: `1px solid ${colors.border}`,
+    color: colors.muted
   },
   
   cardBody: {

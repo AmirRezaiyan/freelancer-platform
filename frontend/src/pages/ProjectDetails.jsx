@@ -1,7 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
+import { formatProjectCategory } from "../utils/formatters";
+import { buildProposalPayload, validateProposalBid } from "../utils/proposalPayload";
+import ResilientImage from "../components/ResilientImage";
+import { AuthContext } from "../context/auth-context";
 import {
   DollarSign,
   Tag,
@@ -29,11 +33,7 @@ import {
   Menu,
   X as XIcon,
   Bell,
-  Search,
-  BarChart3,
-  CreditCard,
-  Users,
-  FileCode
+  Search
 } from "lucide-react";
 
 
@@ -409,30 +409,15 @@ const styles = {
 };
 
 
-const SidebarMenu = ({ isOpen, onClose, userData, navigate }) => {
+const SidebarMenu = ({ isOpen, onClose, userData, navigate, logout }) => {
   const menuItems = [
     { icon: <Home size={18} />, label: "داشبورد", path: "/dashboard" },
-    { icon: <Grid size={18} />, label: "بازار کار", path: "/market" },
-    { icon: <FileCode size={18} />, label: "پروژه‌های من", path: "/dashboard/projects" },
-    { icon: <Briefcase size={18} />, label: "پیشنهادهای من", path: "/dashboard/proposals" },
+    { icon: <Grid size={18} />, label: "بازار پروژه‌ها", path: "/dashboard/projects" },
+    ...(userData?.user_type === "client" ? [] : [{ icon: <Briefcase size={18} />, label: "پیشنهادهای من", path: "/dashboard/proposals" }]),
     { icon: <MessageSquare size={18} />, label: "پیام‌ها", path: "/dashboard/messages" },
-    { icon: <CreditCard size={18} />, label: "تراکنش‌ها", path: "/dashboard/transactions" },
-    { icon: <Users size={18} />, label: "کاربران", path: "/dashboard/users" },
-    { icon: <BarChart3 size={18} />, label: "آمار و گزارشات", path: "/dashboard/analytics" },
-    { icon: <Bell size={18} />, label: "اعلان‌ها", path: "/dashboard/notifications" },
-    { icon: <Settings size={18} />, label: "تنظیمات", path: "/dashboard/settings" },
-    { icon: <LogOut size={18} />, label: "خروج", path: "/logout", isLogout: true }
+    { icon: <Settings size={18} />, label: "پروفایل", path: "/dashboard/profile" },
+    { icon: <LogOut size={18} />, label: "خروج", isLogout: true }
   ];
-
-  const handleNavigation = (path, isLogout = false) => {
-    if (isLogout) {
-      localStorage.removeItem("token");
-      navigate("/login");
-    } else {
-      navigate(path);
-      onClose(); 
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -501,48 +486,32 @@ const SidebarMenu = ({ isOpen, onClose, userData, navigate }) => {
                   : userData.username || "کاربر"}
               </h4>
               <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>
-                {userData.role === 'freelancer' ? 'فریلنسر' : 'کارفرما'}
+                {userData.user_type === 'freelancer' ? 'فریلنسر' : 'کارفرما'}
               </p>
             </div>
           </div>
         )}
 
         <div style={styles.sidebarMenu}>
-          {menuItems.map((item, index) => (
-            <div
-              key={index}
-              style={{
-                ...styles.menuItem,
-                ...(window.location.pathname === item.path ? styles.menuItemActive : {}),
-                ...(item.isLogout ? { color: "#ef4444" } : {})
-              }}
-              onClick={() => handleNavigation(item.path, item.isLogout)}
-              onMouseEnter={(e) => {
-                if (!item.isLogout) {
-                  e.target.style.background = "rgba(100, 116, 139, 0.1)";
-                  e.target.style.color = "#e2e8f0";
-                } else {
-                  e.target.style.background = "rgba(239, 68, 68, 0.1)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!item.isLogout) {
-                  e.target.style.background = window.location.pathname === item.path
-                    ? "rgba(37, 99, 235, 0.1)"
-                    : "transparent";
-                  e.target.style.color = window.location.pathname === item.path
-                    ? "#3b82f6"
-                    : "#cbd5e1";
-                } else {
-                  e.target.style.background = "transparent";
-                }
-              }}
+          {menuItems.map((item) => item.isLogout ? (
+            <button
+              key="logout"
+              type="button"
+              className="project-detail-menu-item"
+              onClick={() => { logout(); navigate("/login", { replace: true }); }}
             >
-              {item.icon}
-              <span style={{ fontSize: "13px", fontWeight: "500" }}>
-                {item.label}
-              </span>
-            </div>
+              {item.icon}<span>{item.label}</span>
+            </button>
+          ) : (
+            <Link
+              key={item.path}
+              to={item.path}
+              className="project-detail-menu-item"
+              aria-current={window.location.pathname === item.path ? "page" : undefined}
+              onClick={onClose}
+            >
+              {item.icon}<span>{item.label}</span>
+            </Link>
           ))}
         </div>
 
@@ -568,6 +537,7 @@ const SidebarMenu = ({ isOpen, onClose, userData, navigate }) => {
 export default function ProjectDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { logout } = useContext(AuthContext);
 
   const [project, setProject] = useState(null);
   const [proposals, setProposals] = useState([]);
@@ -589,16 +559,6 @@ export default function ProjectDetails() {
   const [isProjectOwner, setIsProjectOwner] = useState(false);
   const [clientInfo, setClientInfo] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const placeholderSvg = `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-      <rect width="120" height="120" rx="14" fill="#0b0b0d"/>
-      <g fill="#cbd5e1">
-        <circle cx="60" cy="40" r="22"/>
-        <path d="M18 100c0-23 20-34 42-34s42 11 42 34z"/>
-      </g>
-    </svg>`
-  )}`;
 
   const resolveEntityId = (entity) => {
     if (!entity && entity !== 0) return null;
@@ -629,7 +589,7 @@ export default function ProjectDetails() {
           setUserRole(userData.is_staff ? 'employer' : 'freelancer');
         }
       } catch (err) {
-        console.error("Error loading user data:", err);
+        console.error("Error loading user data:", err?.response?.status);
       }
     };
 
@@ -696,7 +656,7 @@ export default function ProjectDetails() {
             setClientInfo(projectData.client);
           }
         } catch (err) {
-          console.error("Error loading client info:", err);
+          console.error("Error loading client info:", err?.response?.status);
         }
 
         const proposalsRes = await api.get(`/market/projects/${id}/proposals/`, { params: { page: 1 } });
@@ -779,7 +739,7 @@ export default function ProjectDetails() {
 
         setProposals(enrichedProposals);
       } catch (err) {
-        console.error("Failed to load project:", err);
+        console.error("Failed to load project:", err?.response?.status);
         setError("خطا در بارگذاری اطلاعات پروژه. لطفا دوباره تلاش کنید.");
       } finally {
         setLoading(false);
@@ -811,7 +771,7 @@ export default function ProjectDetails() {
       setProposalPage(requestedPage);
       setHasMoreProposals(Boolean(response.data?.next));
     } catch (loadError) {
-      console.error("Failed to load more proposals:", loadError);
+      console.error("Failed to load more proposals:", loadError?.response?.status);
     } finally {
       setLoadingMoreProposals(false);
     }
@@ -915,24 +875,28 @@ export default function ProjectDetails() {
     try {
       await api.post(`/market/proposals/${proposalId}/hire/`);
 
-      setProposals(prev => prev.map(proposal =>
-        proposal.id === proposalId
-          ? { ...proposal, status: "accepted" }
-          : proposal
-      ));
-
       const acceptedProposal = proposals.find(p => p.id === proposalId);
+      setProposals(prev => prev.map(proposal => ({
+        ...proposal,
+        status: proposal.id === proposalId ? "accepted" : "rejected"
+      })));
+
       if (acceptedProposal) {
+        const freelancer = acceptedProposal.freelancer_details || acceptedProposal.freelancer;
+        const freelancerId = typeof freelancer === "object" ? freelancer?.id ?? freelancer?.pk : freelancer;
         setProject(prev => ({
           ...prev,
           status: "in_progress",
-          hired_freelancer: acceptedProposal.freelancer_details || prev.hired_freelancer
+          hired_freelancer: freelancerId ? {
+            id: freelancerId,
+            username: typeof freelancer === "object" ? freelancer?.username : acceptedProposal.freelancer_username
+          } : prev.hired_freelancer
         }));
       }
 
       setSuccess("پیشنهاد با موفقیت قبول شد! فریلنسر استخدام شد.");
     } catch (err) {
-      console.error("Hire error:", err);
+      console.error("Hire error:", err?.response?.status);
       const errorData = err?.response?.data;
       const errorMessage = errorData?.detail || errorData?.message || "خطا در قبول پیشنهاد";
 
@@ -949,28 +913,8 @@ export default function ProjectDetails() {
     }
   };
 
-  const handleNavigateToMessages = (proposal) => {
-    let freelancerId = null;
-
-    if (proposal.freelancer && typeof proposal.freelancer === "object") {
-      freelancerId = proposal.freelancer.id || proposal.freelancer.pk ||
-        proposal.freelancer.user_id || proposal.freelancer.user;
-    } else if (typeof proposal.freelancer === "number") {
-      freelancerId = proposal.freelancer;
-    } else if (typeof proposal.freelancer === "string") {
-      const match = proposal.freelancer.match(/\d+/);
-      freelancerId = match ? Number(match[0]) : null;
-    }
-
-    if (!freelancerId) {
-      freelancerId = proposal.freelancer_id || proposal.user_id || proposal.freelancerId;
-    }
-
-    if (!freelancerId && proposal.freelancer_details) {
-      freelancerId = proposal.freelancer_details.id || proposal.freelancer_details.pk;
-    }
-
-    navigate(`/dashboard/messages?${freelancerId ? `user=${freelancerId}&` : ""}project=${project?.id}`);
+  const handleNavigateToMessages = () => {
+    navigate(`/dashboard/messages?project=${project?.id}`);
   };
 
   const handleSubmitProposal = async () => {
@@ -991,23 +935,17 @@ export default function ProjectDetails() {
       return;
     }
 
-    const bidAmount = Number(String(form.bid).replace(/[^\d]/g, ""));
-    if (isNaN(bidAmount) || bidAmount <= 0) {
-      setError("لطفاً مبلغ پیشنهادی معتبر وارد کنید.");
+    const bidError = validateProposalBid(form.bid.trim(), project.budget_min, project.budget_max);
+    if (bidError) {
+      setError(bidError);
       return;
     }
+    const bidAmount = Number(form.bid.trim());
 
     try {
       setApplyLoading(true);
       setError(null);
-      const payload = {
-        project: project.id,
-        cover_letter: form.cover_letter.trim(),
-        bid: bidAmount,
-        freelancer: userData?.id
-      };
-
-      console.log("Sending proposal:", payload);
+      const payload = buildProposalPayload(project.id, bidAmount, form.cover_letter.trim());
 
       const response = await api.post(`/market/proposals/`, payload);
 
@@ -1015,20 +953,22 @@ export default function ProjectDetails() {
         setHasApplied(true);
         setShowApplyForm(false);
         setForm({ cover_letter: "", bid: "" });
-
-        const proposalsRes = await api.get(`/market/projects/${id}/proposals/`, { params: { page: 1 } });
-        setHasMoreProposals(Boolean(proposalsRes.data?.next));
-        setTotalProposals(proposalsRes.data?.count ?? proposalsRes.data?.length ?? 0);
-        setProposalPage(1);
-        const proposalsData = Array.isArray(proposalsRes.data)
-          ? proposalsRes.data
-          : (proposalsRes.data?.results || proposalsRes.data || []);
-
-        setProposals(proposalsData);
         setSuccess("پیشنهاد شما با موفقیت ارسال شد!");
+
+        try {
+          const proposalsRes = await api.get(`/market/projects/${id}/proposals/`, { params: { page: 1 } });
+          setHasMoreProposals(Boolean(proposalsRes.data?.next));
+          setTotalProposals(proposalsRes.data?.count ?? proposalsRes.data?.length ?? 0);
+          setProposalPage(1);
+          const proposalsData = Array.isArray(proposalsRes.data)
+            ? proposalsRes.data
+            : (proposalsRes.data?.results || proposalsRes.data || []);
+          setProposals(proposalsData);
+        } catch {
+          setError("پیشنهاد ثبت شد، اما تازه‌سازی فهرست انجام نشد. صفحه را دوباره بارگذاری کنید.");
+        }
       }
     } catch (err) {
-      console.error("Proposal submission error:", err);
       const errorData = err?.response?.data;
 
       let errorMessage = "خطا در ارسال پیشنهاد";
@@ -1147,7 +1087,7 @@ export default function ProjectDetails() {
 
   if (loading) {
     return (
-      <div style={styles.pageContainer}>
+      <div className="project-details-page" style={styles.pageContainer}>
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -1215,7 +1155,7 @@ export default function ProjectDetails() {
 
   if (!project) {
     return (
-      <div style={styles.pageContainer}>
+      <div className="project-details-page" style={styles.pageContainer}>
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -1239,7 +1179,7 @@ export default function ProjectDetails() {
               ممکن است پروژه حذف شده یا آدرس اشتباه باشد.
             </p>
             <button
-              onClick={() => navigate("/market")}
+              onClick={() => navigate("/dashboard/projects")}
               style={{
                 ...styles.primaryButton,
                 padding: "8px 20px"
@@ -1255,7 +1195,7 @@ export default function ProjectDetails() {
   }
 
   return (
-    <div style={styles.pageContainer}>
+    <div className="project-details-page" style={styles.pageContainer}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(20px); }
@@ -1324,9 +1264,10 @@ export default function ProjectDetails() {
         onClose={() => setSidebarOpen(false)}
         userData={userData}
         navigate={navigate}
+        logout={logout}
       />
 
-      <div style={{
+      <div className="project-details-banner" style={{
         position: "relative",
         overflow: "hidden",
         background: "linear-gradient(90deg, #1d4ed8 0%, #7c3aed 50%, #db2777 100%)",
@@ -1341,7 +1282,7 @@ export default function ProjectDetails() {
           background: "linear-gradient(45deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.1) 100%)"
         }}></div>
 
-        <div style={styles.container}>
+        <div className="project-details-banner-content" style={styles.container}>
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -1395,7 +1336,7 @@ export default function ProjectDetails() {
               </button>
 
               <button
-                onClick={() => navigate("/market")}
+                onClick={() => navigate("/dashboard/projects")}
                 style={{
                   ...styles.hamburgerButton,
                   padding: "6px 10px"
@@ -1414,7 +1355,7 @@ export default function ProjectDetails() {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Link to="/dashboard" style={styles.sidebarLink}><span>🏠</span> داشبورد</Link>
                 <Link to="/dashboard/projects" style={{ ...styles.sidebarLink, background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}><span>📁</span> پروژه‌ها</Link>
-                <Link to="/dashboard/proposals" style={styles.sidebarLink}><span>📄</span> پروپوزال‌ها</Link>
+                <Link to="/dashboard/proposals" style={styles.sidebarLink}><span>📄</span> پیشنهادها</Link>
                 <Link to="/dashboard/messages" style={styles.sidebarLink}><span>💬</span> پیام‌ها</Link>
                 <Link to="/profile" style={styles.sidebarLink}><span>⚙️</span> حساب</Link>
               </div>
@@ -1566,7 +1507,7 @@ export default function ProjectDetails() {
         </div>
       </div>
 
-      <div style={styles.container}>
+      <div className="project-details-content" style={styles.container}>
         <div style={styles.mainContent}>
           <div style={{
             display: "grid",
@@ -1574,7 +1515,7 @@ export default function ProjectDetails() {
             gap: "16px",
             marginBottom: "20px"
           }}>
-            <div style={{
+            <div className="project-summary-card" style={{
               ...styles.card,
               animation: "fadeIn 0.6s ease-out 0.1s both"
             }}>
@@ -1635,7 +1576,7 @@ export default function ProjectDetails() {
               </div>
             </div>
 
-            <div style={{
+            <div className="project-summary-card" style={{
               ...styles.card,
               animation: "fadeIn 0.6s ease-out 0.2s both"
             }}>
@@ -1676,7 +1617,7 @@ export default function ProjectDetails() {
                   color: "#8b5cf6",
                   marginBottom: "5px"
                 }}>
-                  {project.category || "عمومی"}
+                  {formatProjectCategory(project.category)}
                 </div>
                 <div style={{
                   fontSize: "12px",
@@ -1687,7 +1628,7 @@ export default function ProjectDetails() {
               </div>
             </div>
 
-            <div style={{
+            <div className="project-summary-card" style={{
               ...styles.card,
               animation: "fadeIn 0.6s ease-out 0.3s both"
             }}>
@@ -1750,7 +1691,7 @@ export default function ProjectDetails() {
             </div>
           </div>
 
-          <div style={{
+          <div className="project-details-card" style={{
             ...styles.card,
             animation: "fadeIn 0.6s ease-out 0.4s both",
             marginBottom: "20px"
@@ -2001,7 +1942,7 @@ export default function ProjectDetails() {
             </div>
           </div>
 
-          <div style={{
+          <div className="project-details-card" style={{
             ...styles.card,
             animation: "fadeIn 0.6s ease-out 0.5s both"
           }}>
@@ -2156,6 +2097,13 @@ export default function ProjectDetails() {
                     const isLoading = actionLoading[proposal.id];
                     const avatarSrc = selectAvatar(proposal.freelancer_details);
                     const cardId = `proposal-${proposal.id || index}`;
+                    const hiredFreelancerId = resolveEntityId(project.hired_freelancer);
+                    const proposalFreelancerId = resolveEntityId(proposal.freelancer)
+                      || resolveEntityId(proposal.freelancer_details);
+                    const currentUserId = resolveEntityId(userData);
+                    const canMessage = hiredFreelancerId != null
+                      && String(hiredFreelancerId) === String(proposalFreelancerId)
+                      && (isProjectOwner || String(currentUserId) === String(hiredFreelancerId));
 
                     return (
                       <div
@@ -2200,7 +2148,7 @@ export default function ProjectDetails() {
                                 position: "relative"
                               }}>
                                 {avatarSrc ? (
-                                  <img
+                                  <ResilientImage
                                     src={avatarSrc}
                                     alt={displayFreelancerName(proposal)}
                                     style={{
@@ -2208,10 +2156,7 @@ export default function ProjectDetails() {
                                       height: "100%",
                                       objectFit: "cover"
                                     }}
-                                    onError={(e) => {
-                                      e.target.onerror = null;
-                                      e.target.src = placeholderSvg;
-                                    }}
+                                    fallback={<User size={16} color="#ffffff" />}
                                   />
                                 ) : (
                                   <User size={16} color="#ffffff" />
@@ -2396,26 +2341,20 @@ export default function ProjectDetails() {
                             </button>
                           )}
 
-                          <button
-                            onClick={() => handleNavigateToMessages(proposal)}
-                            style={{
-                              ...styles.secondaryButton,
-                              flex: 1,
-                              minWidth: "120px",
-                              padding: "10px"
-                            }}
-                            onMouseEnter={(e) => {
-                              e.target.style.background = "rgba(100, 116, 139, 0.3)";
-                              e.target.style.transform = "translateY(-2px)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.target.style.background = "rgba(71, 85, 105, 0.3)";
-                              e.target.style.transform = "translateY(0)";
-                            }}
-                          >
-                            <MessageSquare size={14} />
-                            ارسال پیام
-                          </button>
+                          {canMessage && (
+                            <button
+                              onClick={handleNavigateToMessages}
+                              style={{
+                                ...styles.secondaryButton,
+                                flex: 1,
+                                minWidth: "120px",
+                                padding: "10px"
+                              }}
+                            >
+                              <MessageSquare size={14} />
+                              ارسال پیام
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2518,7 +2457,7 @@ export default function ProjectDetails() {
                 gap: "16px"
               }}>
                 <div>
-                  <label style={{
+                  <label htmlFor="project-proposal-bid" style={{
                     display: "block",
                     fontSize: "13px",
                     fontWeight: "600",
@@ -2568,7 +2507,9 @@ export default function ProjectDetails() {
                   </label>
                   <div style={{ position: "relative" }}>
                     <input
+                      id="project-proposal-bid"
                       type="text"
+                      inputMode="numeric"
                       value={form.bid}
                       onChange={(e) => setForm(prev => ({ ...prev, bid: e.target.value }))}
                       placeholder="مثال: 5000000"

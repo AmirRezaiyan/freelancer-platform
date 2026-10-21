@@ -1,15 +1,20 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, useNavigate, Outlet, useLocation } from "react-router-dom";
+import { BriefcaseBusiness, FileText, FolderKanban, LayoutDashboard, LogOut, Menu, MessageCircle, Plus, UserRound, X } from "lucide-react";
 import { AuthContext } from "../context/auth-context";
 import UserAvatar from "../components/UserAvatar";
+import ResilientImage from "../components/ResilientImage";
+import WorkspaceHeader from "../components/Header";
+import DashboardOverview from "./DashboardOverview";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
 import { markAllProjectMessagesRead } from "../api/messageState";
+import { entityId, mapDashboardMetrics, ownedProjects, pageResults } from "../utils/dashboardData";
 
 export default function Dashboard() {
   const { user, loading, logout } = useContext(AuthContext);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 960);
   const navigate = useNavigate();
   const location = useLocation();
   const menuRef = useRef(null);
@@ -22,55 +27,34 @@ export default function Dashboard() {
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
-  if (loading) return (
-    <div style={{
-      minHeight: "100vh",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      background: "linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)",
-      color: "#fff"
-    }}>
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 20,
-        animation: "pulse 2s infinite"
-      }}>
-        <div style={{
-          width: 60,
-          height: 60,
-          border: "3px solid rgba(99, 102, 241, 0.3)",
-          borderTopColor: "#6366f1",
-          borderRadius: "50%",
-          animation: "spin 1s linear infinite"
-        }} />
-        <span style={{ fontSize: 18, fontWeight: 600 }}>در حال بارگذاری...</span>
-      </div>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-      `}</style>
-    </div>
-  );
+  useEffect(() => {
+    const syncSidebar = () => setSidebarOpen(window.innerWidth >= 960);
+    window.addEventListener("resize", syncSidebar);
+    return () => window.removeEventListener("resize", syncSidebar);
+  }, []);
+
+  useEffect(() => {
+    if (!sidebarOpen || window.innerWidth >= 960) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [sidebarOpen]);
+
+  if (loading) return <div className="app-loading" role="status">در حال بارگذاری حساب کاربری...</div>;
 
   const isIndex = location.pathname === "/dashboard" || location.pathname === "/dashboard/";
   const normalizedUserTop = normalizeUser(user);
   const isClientTop = normalizedUserTop?.user_type === "client";
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      width: "100vw",
-      margin: 0,
-      padding: 0,
-      background: "linear-gradient(135deg, #0a0a0f 0%, #0f172a 50%, #1e1b4b 100%)",
-      color: "#fff",
-      display: "flex",
-      flexDirection: "column",
-      overflow: "hidden"
-    }}>
+    <div className="workspace-shell">
+      <WorkspaceHeader
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
+      />
+      {sidebarOpen && <button className="workspace-scrim" type="button" aria-label="بستن فهرست" onClick={() => setSidebarOpen(false)} />}
       <div style={{
         position: "fixed",
         inset: 0,
@@ -122,7 +106,7 @@ export default function Dashboard() {
         .hover-glow:hover { box-shadow: 0 0 30px rgba(99, 102, 241, 0.4) !important; }
       `}</style>
 
-      <header style={{
+      <header className="legacy-dashboard-header" style={{
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
@@ -286,7 +270,7 @@ export default function Dashboard() {
                       color: "#e2e8f0", textDecoration: "none", borderRadius: 12,
                       transition: "all 0.2s", justifyContent: "flex-end"
                     }}>
-                      <span>پروپوزال‌ها</span>
+                      <span>پیشنهادها</span>
                       <span style={{ fontSize: 20 }}>✉️</span>
                     </Link>
                   )}
@@ -331,17 +315,17 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div style={{
+      <div className="workspace-frame" style={{
         display: "flex",
         flex: 1,
         width: "100%",
-        height: "calc(100vh - 80px)",
+        height: "calc(100vh - 66px)",
         overflow: "hidden",
         position: "relative",
         zIndex: 1
       }}>
         {sidebarOpen && (
-          <aside style={{
+          <aside id="workspace-navigation" className="workspace-sidebar" aria-label="فهرست اصلی" style={{
             width: 280,
             minWidth: 280,
             background: "rgba(15, 23, 42, 0.7)",
@@ -355,16 +339,18 @@ export default function Dashboard() {
           }}>
             <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
-                { to: "/dashboard", icon: "🏠", label: "داشبورد" },
-                { to: "/dashboard/projects", icon: "📁", label: "پروژه‌ها" },
-                ...(!isClientTop ? [{ to: "/dashboard/proposals", icon: "✉️", label: "پروپوزال‌ها" }] : []),
-                { to: "/dashboard/messages", icon: "💬", label: "پیام‌ها" },
-                { to: "/dashboard/profile", icon: "⚙️", label: "حساب کاربری" }
+                { to: "/dashboard", icon: <LayoutDashboard size={18} />, label: "نمای کلی" },
+                { to: "/dashboard/projects", icon: <FolderKanban size={18} />, label: "پروژه‌ها" },
+                ...(!isClientTop ? [{ to: "/dashboard/proposals", icon: <FileText size={18} />, label: "پیشنهادهای من" }] : []),
+                { to: "/dashboard/messages", icon: <MessageCircle size={18} />, label: "پیام‌ها" },
+                { to: "/dashboard/profile", icon: <BriefcaseBusiness size={18} />, label: "پروفایل" }
               ].map((item, idx) => (
-                <Link
+                <NavLink
                   key={item.to}
                   to={item.to}
-                  className="hover-lift"
+                  end={item.to === "/dashboard"}
+                  onClick={() => { if (window.innerWidth < 960) setSidebarOpen(false); }}
+                  className={({ isActive }) => `workspace-nav-link${isActive ? " active" : ""}`}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -385,7 +371,7 @@ export default function Dashboard() {
                 >
                   <span style={{ fontSize: 22 }}>{item.icon}</span>
                   <span style={{ fontWeight: 600, fontSize: 15 }}>{item.label}</span>
-                </Link>
+                </NavLink>
               ))}
 
               <button
@@ -414,7 +400,7 @@ export default function Dashboard() {
           </aside>
         )}
 
-        <main style={{
+        <main className="workspace-content" style={{
           flex: 1,
           overflowY: "auto",
           overflowX: "hidden",
@@ -434,13 +420,22 @@ function DashboardHome({ user }) {
   const location = useLocation();
 
   const [stats, setStats] = useState({
-    balance: 0,
-    proposals: { total: 0, pending: 0, accepted: 0, rejected: 0 },
-    messages: 0,
-    projects: { total: 0, active: 0, completed: 0 },
+    balance: null,
+    proposals: { total: null, pending: null, accepted: null, rejected: null },
+    messages: null,
+    projects: { total: null, active: null, completed: null },
     recentActivities: []
   });
   const [loading, setLoading] = useState(true);
+  const [dashboardMetrics, setDashboardMetrics] = useState({});
+  const [dashboardError, setDashboardError] = useState(null);
+  const [activityError, setActivityError] = useState(null);
+  const [recentProjects, setRecentProjects] = useState([]);
+  const [projectProposals, setProjectProposals] = useState([]);
+  const [freelancerProposals, setFreelancerProposals] = useState([]);
+  const [projectLoading, setProjectLoading] = useState(true);
+  const [projectError, setProjectError] = useState(null);
+  const [proposalError, setProposalError] = useState(null);
 
   const [portfolios, setPortfolios] = useState([]);
   const [portLoading, setPortLoading] = useState(false);
@@ -448,6 +443,7 @@ function DashboardHome({ user }) {
   const [editing, setEditing] = useState(null);
   const [fileInputKey, setFileInputKey] = useState(Date.now());
   const fileRef = useRef(null);
+  const portfolioPreviewUrlRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [uploadError, setUploadError] = useState(null);
@@ -459,74 +455,179 @@ function DashboardHome({ user }) {
   const isFreelancer = normalizedUser?.user_type === "freelancer";
   const isClient = normalizedUser?.user_type === "client";
 
+  useEffect(() => () => {
+    if (portfolioPreviewUrlRef.current) {
+      URL.revokeObjectURL(portfolioPreviewUrlRef.current);
+      portfolioPreviewUrlRef.current = null;
+    }
+    document.body.style.overflow = "";
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const fetchDashboardStats = async () => {
       try {
         setLoading(true);
+        setDashboardError(null);
+        setActivityError(null);
         const requests = [
-          api.get("/market/wallet/balance/").catch(() => null),
-          api.get("/market/proposals/stats/").catch(() => null),
-          api.get("/market/messages/unread/").catch(() => null),
+          api.get("/market/dashboard/").catch(() => null),
+          isFreelancer ? api.get("/market/proposals/stats/").catch(() => null) : Promise.resolve(null),
+          isClient ? api.get("/market/messages/unread/").catch(() => null) : Promise.resolve(null),
           api.get("/market/projects/my-stats/").catch(() => null),
-          api.get("/market/activities/recent/?limit=5").catch(() => null)
+          api.get("/market/activities/recent/", { params: { limit: 5 } }).catch(() => null)
         ];
         const results = await Promise.allSettled(requests);
+        const summary = results[0].status === "fulfilled" ? results[0].value?.data : null;
+        const proposalStats = results[1].status === "fulfilled" ? results[1].value?.data : null;
+        const unreadMessages = results[2].status === "fulfilled" ? results[2].value?.data : null;
+        const projectStats = results[3].status === "fulfilled" ? results[3].value?.data : null;
+        const activityResponse = results[4].status === "fulfilled" ? results[4].value?.data : null;
 
         const newStats = {
-          balance: 0,
-          proposals: { total: 0, pending: 0, accepted: 0, rejected: 0 },
-          messages: 0,
-          projects: { total: 0, active: 0, completed: 0 },
+          balance: null,
+          proposals: { total: null, pending: null, accepted: null, rejected: null },
+          messages: null,
+          projects: { total: null, active: null, completed: null },
           recentActivities: []
         };
 
-        if (results[0].status === "fulfilled" && results[0].value?.data) {
-          newStats.balance = results[0].value.data.balance ?? 0;
+        if (summary?.counts) {
+          setDashboardMetrics(mapDashboardMetrics(normalizedUser?.user_type, summary, proposalStats));
+          if (isClient) {
+            newStats.projects.total = summary.counts.projects_total ?? null;
+            newStats.projects.active = summary.counts.in_progress ?? null;
+            newStats.proposals.total = summary.counts.proposals_received ?? null;
+          } else {
+            newStats.proposals.total = summary.counts.proposals_sent ?? null;
+            newStats.proposals.accepted = summary.counts.active_contracts ?? null;
+          }
+          newStats.balance = null;
+        } else if (!cancelled) {
+          setDashboardError("آمار داشبورد بارگذاری نشد.");
         }
 
-        if (results[1].status === "fulfilled" && results[1].value?.data) {
-          const d = results[1].value.data;
+        if (proposalStats) {
           newStats.proposals = {
-            total: d.total ?? 0,
-            pending: d.pending ?? 0,
-            accepted: d.accepted ?? 0,
-            rejected: d.rejected ?? 0
+            ...newStats.proposals,
+            total: newStats.proposals.total ?? proposalStats.total ?? null,
+            pending: proposalStats.pending ?? null,
+            accepted: newStats.proposals.accepted ?? proposalStats.accepted ?? null,
+            rejected: proposalStats.rejected ?? null
           };
         }
 
-        if (results[2].status === "fulfilled" && results[2].value?.data) {
-          const d = results[2].value.data;
-          newStats.messages = d.unread ?? d.unread_count ?? d.count ?? 0;
+        if (unreadMessages) {
+          newStats.messages = unreadMessages.unread ?? unreadMessages.unread_count ?? unreadMessages.count ?? null;
         }
 
-        if (results[3].status === "fulfilled" && results[3].value?.data) {
-          const d = results[3].value.data;
+        if (projectStats) {
           newStats.projects = {
-            total: d.total ?? 0,
-            active: d.active ?? 0,
-            completed: d.completed ?? 0
+            total: newStats.projects.total ?? projectStats.total ?? null,
+            active: newStats.projects.active ?? projectStats.active ?? null,
+            completed: projectStats.completed ?? null
           };
         }
 
-        if (results[4].status === "fulfilled" && results[4].value?.data) {
-          const d = results[4].value.data;
-          newStats.recentActivities = d?.results ?? d?.activities ?? d ?? [];
+        if (activityResponse) {
+          newStats.recentActivities = pageResults(activityResponse);
+        } else if (!cancelled) {
+          setActivityError("فعالیت‌های اخیر بارگذاری نشد.");
         }
 
         if (!cancelled) {
           setStats(newStats);
-          loadPortfolios();
+          if (isFreelancer) loadPortfolios();
         }
       } catch (err) {
-        console.error("Dashboard fetch error:", err);
+        console.error("Dashboard fetch error:", err?.response?.status);
+        if (!cancelled) setDashboardError("اطلاعات داشبورد بارگذاری نشد.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
     fetchDashboardStats();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, isClient, isFreelancer, normalizedUser?.user_type]);
+
+  useEffect(() => {
+    if (!normalizedUser?.id) return undefined;
+    const controller = new AbortController();
+    let active = true;
+
+    async function loadRoleLists() {
+      setProjectLoading(true);
+      setProjectError(null);
+      setProposalError(null);
+      try {
+        if (isClient) {
+          const response = await api.get("/market/projects/", {
+            params: { page: 1, page_size: 50 },
+            signal: controller.signal,
+          });
+          const clientProjects = ownedProjects(response.data, normalizedUser.id).slice(0, 4);
+          if (!active) return;
+          setRecentProjects(clientProjects);
+
+          const summaries = await Promise.all(clientProjects.slice(0, 3).map(async (project) => {
+            try {
+              const proposalResponse = await api.get(`/market/projects/${project.id}/proposals/`, {
+                params: { page: 1 },
+                signal: controller.signal,
+              });
+              const records = pageResults(proposalResponse.data);
+              return {
+                projectId: project.id,
+                projectTitle: project.title,
+                count: proposalResponse.data?.count ?? records.length,
+                latest: records[0] || null,
+              };
+            } catch (error) {
+              if (controller.signal.aborted) throw error;
+              return { projectId: project.id, projectTitle: project.title, count: null, latest: null, failed: true };
+            }
+          }));
+          if (active) {
+            setProjectProposals(summaries);
+            if (summaries.some((summary) => summary.failed)) {
+              setProposalError("بارگذاری پیشنهادهای یکی از پروژه‌ها انجام نشد.");
+            }
+          }
+        } else if (isFreelancer) {
+          const response = await api.get("/market/proposals/mine/", {
+            params: { page: 1, page_size: 4 },
+            signal: controller.signal,
+          });
+          const records = pageResults(response.data).slice(0, 4);
+          const enriched = await Promise.all(records.map(async (proposal) => {
+            const projectId = entityId(proposal.project);
+            if (!projectId) return proposal;
+            try {
+              const projectResponse = await api.get(`/market/projects/${projectId}/`, { signal: controller.signal });
+              return { ...proposal, project_title: projectResponse.data?.title || `پروژه شماره ${projectId}` };
+            } catch (error) {
+              if (controller.signal.aborted) throw error;
+              return { ...proposal, project_title: `پروژه شماره ${projectId}` };
+            }
+          }));
+          if (active) setFreelancerProposals(enriched);
+        }
+      } catch {
+        if (active && !controller.signal.aborted) {
+          if (isClient) setProjectError("پروژه‌های اخیر بارگذاری نشدند.");
+          if (isFreelancer) setProposalError("پیشنهادهای اخیر بارگذاری نشدند.");
+        }
+      } finally {
+        if (active) setProjectLoading(false);
+      }
+    }
+
+    loadRoleLists();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isClient, isFreelancer, normalizedUser?.id]);
 
 
   useEffect(() => {
@@ -535,7 +636,7 @@ function DashboardHome({ user }) {
         window.dispatchEvent(new CustomEvent("messagesReadByEmployer"));
         setStats(prev => ({ ...prev, messages: 0 }));
       }).catch((err) => {
-        console.error("Error marking all project messages as read:", err);
+        console.error("Error marking all project messages as read:", err?.response?.status);
       });
     }
   }, [location.pathname, stats.messages]);
@@ -550,7 +651,7 @@ function DashboardHome({ user }) {
       const data = await fetchAllPages("/market/portfolio/");
       setPortfolios(data);
     } catch (err) {
-      console.error("load portfolios error", err);
+      console.error("load portfolios error", err?.response?.status);
     } finally {
       setPortLoading(false);
     }
@@ -561,7 +662,20 @@ function DashboardHome({ user }) {
     return v ? v.pop() : null;
   }
 
+  function revokePortfolioPreview() {
+    if (!portfolioPreviewUrlRef.current) return;
+    URL.revokeObjectURL(portfolioPreviewUrlRef.current);
+    portfolioPreviewUrlRef.current = null;
+  }
+
+  function closePortfolioEditor() {
+    revokePortfolioPreview();
+    setUploadOpen(false);
+    setEditing(null);
+  }
+
   function openNewPortfolio() {
+    revokePortfolioPreview();
     setEditing({ id: null, title: "", description: "", filePreviewUrl: null, fileObj: null, media_type: null });
     setUploadError(null);
     setFileInputKey(Date.now());
@@ -569,6 +683,7 @@ function DashboardHome({ user }) {
   }
 
   function openEditPortfolio(p) {
+    revokePortfolioPreview();
     setEditing({
       id: p.id,
       title: p.title || "",
@@ -583,6 +698,7 @@ function DashboardHome({ user }) {
 
   function onFileChange(e) {
     setUploadError(null);
+    revokePortfolioPreview();
     const f = e.target.files?.[0];
     if (!f) {
       setEditing(prev => ({ ...prev, fileObj: null, filePreviewUrl: null, media_type: null }));
@@ -591,6 +707,7 @@ function DashboardHome({ user }) {
     const isImage = f.type.startsWith("image/");
     const isVideo = f.type.startsWith("video/");
     const url = URL.createObjectURL(f);
+    portfolioPreviewUrlRef.current = url;
     setEditing(prev => ({ ...prev, fileObj: f, filePreviewUrl: url, media_type: isImage ? "image" : (isVideo ? "video" : "file") }));
   }
 
@@ -628,10 +745,9 @@ function DashboardHome({ user }) {
       }
       const saved = res.data;
       setPortfolios(prev => editing.id ? prev.map(x => x.id === saved.id ? saved : x) : [saved, ...prev]);
-      setUploadOpen(false);
-      setEditing(null);
+      closePortfolioEditor();
     } catch (err) {
-      console.error("portfolio submit error", err);
+      console.error("portfolio submit error", err?.response?.status);
       setUploadError("خطا در ارسال نمونه‌کار");
     } finally {
       setSaving(false);
@@ -666,14 +782,37 @@ function DashboardHome({ user }) {
     document.body.style.overflow = "";
   }
 
-  const formatNumber = (num) => num?.toLocaleString('fa-IR') || '۰';
+  const formatNumber = (num) => num == null ? "—" : num.toLocaleString("fa-IR");
   const completion = computeCompletion(normalizedUser);
 
   const inProgressProjects = stats.projects.active;
   const completedProjects = stats.projects.completed;
 
   return (
-    <div style={{ width: "100%", color: "#fff" }}>
+    <>
+      <DashboardOverview
+        user={normalizedUser}
+        metrics={dashboardMetrics}
+        loading={loading || projectLoading}
+        error={dashboardError}
+        activities={stats.recentActivities}
+        activityLoading={loading}
+        activityError={activityError}
+        projects={recentProjects}
+        projectError={projectError}
+        projectProposals={projectProposals}
+        proposals={freelancerProposals}
+        proposalError={proposalError}
+        portfolios={portfolios}
+        portfolioLoading={portLoading}
+        deletingId={deletingId}
+        onAddPortfolio={openNewPortfolio}
+        onEditPortfolio={openEditPortfolio}
+        onDeletePortfolio={handleDeletePortfolio}
+        onOpenPortfolio={openViewer}
+      />
+      <div hidden aria-hidden="true">
+    <div className="dashboard-home" style={{ width: "100%", color: "#fff" }}>
       <style>{`
         @keyframes gradientShift {
           0% { background-position: 0% 50%; }
@@ -688,14 +827,15 @@ function DashboardHome({ user }) {
         .portfolio-card:hover { transform: translateY(-6px); box-shadow: 0 25px 50px rgba(0,0,0,0.4) !important; }
       `}</style>
 
-      <section style={{
+      <section className="dashboard-welcome" style={{
         position: "relative",
         borderRadius: 28,
         overflow: "hidden",
         marginBottom: 32,
         animation: "fadeInUp 0.6s ease-out"
       }}>
-        <div style={{
+        <img className="dashboard-welcome-image" src="/images/workspace.jpg" alt="" width="1200" height="800" fetchPriority="high" />
+        <div className="dashboard-welcome-gradient" style={{
           position: "absolute",
           inset: 0,
           background: isClient
@@ -704,7 +844,7 @@ function DashboardHome({ user }) {
           backgroundSize: "200% 200%",
           animation: "gradientShift 8s ease infinite"
         }} />
-        <div style={{
+        <div className="dashboard-welcome-shade" style={{
           position: "absolute",
           inset: 0,
           background: "radial-gradient(circle at 80% 20%, rgba(255,255,255,0.05) 0%, transparent 50%)"
@@ -742,7 +882,7 @@ function DashboardHome({ user }) {
             }}>
               {isClient
                 ? "به پنل مدیریت کارفرمایی خوش آمدید. پروژه‌های خود را منتشر کنید، بهترین فریلنسرها را پیدا کنید و روند همکاری را به راحتی مدیریت کنید."
-                : "به پنل فریلنسری خوش آمدید. پروژه‌های جدید را کشف کنید، پیشنهادات حرفه‌ای ارسال کنید و مهارت‌هایتان را به نمایش بگذارید."
+                : "پروژه‌های مناسب را پیدا کنید، پیشنهادهای خود را پیگیری کنید و پروفایلتان را کامل نگه دارید."
               }
             </p>
 
@@ -769,7 +909,7 @@ function DashboardHome({ user }) {
                     }}
                   >
                     <span>➕</span>
-                    <span>انتشار پروژه جدید</span>
+                    <span>ساخت پروژه</span>
                   </button>
                   <button
                     onClick={() => navigate("/dashboard/projects")}
@@ -836,7 +976,7 @@ function DashboardHome({ user }) {
                     }}
                   >
                     <span>✉️</span>
-                    <span>پیشنهادات من</span>
+                    <span>پیشنهادهای من</span>
                   </Link>
                 </>
               )}
@@ -931,7 +1071,7 @@ function DashboardHome({ user }) {
         </div>
       </section>
 
-      <section style={{
+      <section className="dashboard-stat-grid" style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
         gap: 20,
@@ -976,7 +1116,7 @@ function DashboardHome({ user }) {
           <>
             <StatCard
               icon="✉️"
-              label="پیشنهادات ارسالی"
+              label="پیشنهادهای ارسال‌شده"
               value={formatNumber(stats.proposals.total)}
               subLabel={`${formatNumber(stats.proposals.pending)} در انتظار`}
               gradient="linear-gradient(135deg, #34d399 0%, #3b82f6 100%)"
@@ -1198,7 +1338,7 @@ function DashboardHome({ user }) {
                           {p.media?.endsWith?.('.mp4') ? (
                             <video src={p.media} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted />
                           ) : p.media ? (
-                            <img src={p.media} alt={p.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <ResilientImage src={p.media} alt={p.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
                             <div style={{ color: "#475569", fontSize: 40 }}>🖼️</div>
                           )}
@@ -1251,7 +1391,7 @@ function DashboardHome({ user }) {
                     <div style={{ fontSize: 56, marginBottom: 20 }}>🎨</div>
                     <div style={{ fontSize: 17, marginBottom: 12, color: "#e2e8f0" }}>نمونه‌کارهای خود را به نمایش بگذارید</div>
                     <div style={{ fontSize: 14, marginBottom: 24, color: "#64748b" }}>
-                      آپلود نمونه‌کار باعث افزایش ۳ برابری شانس استخدام شما می‌شود
+                      نمونه‌کارهای مرتبط کمک می‌کنند کارفرماها کیفیت و سبک کار شما را بهتر ارزیابی کنند.
                     </div>
                     <button
                       onClick={openNewPortfolio}
@@ -1309,8 +1449,8 @@ function DashboardHome({ user }) {
                       }}
                     >
                       <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
-                      <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 6 }}>جستجوی فریلنسر</div>
-                      <div style={{ color: "#94a3b8", fontSize: 13 }}>بهترین‌ها را پیدا کنید</div>
+                      <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 6 }}>بازار پروژه‌ها</div>
+                      <div style={{ color: "#94a3b8", fontSize: 13 }}>پروژه‌های منتشرشده را بررسی کنید</div>
                     </button>
                     <button
                       onClick={() => navigate("/dashboard/messages")}
@@ -1370,14 +1510,14 @@ function DashboardHome({ user }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {isClient ? (
                 <>
-                  <SidebarButton icon="📝" label="ایجاد پروژه جدید" onClick={() => navigate("/dashboard/projects/create")} />
+                  <SidebarButton icon="📝" label="ساخت پروژه" onClick={() => navigate("/dashboard/projects/create")} />
                   <SidebarButton icon="📁" label="مدیریت پروژه‌ها" onClick={() => navigate("/dashboard/projects")} />
                   <SidebarButton icon="💬" label="پیام‌ها" onClick={() => navigate("/dashboard/messages")} />
                 </>
               ) : (
                 <>
                   <SidebarButton icon="🔍" label="جستجوی پروژه‌ها" onClick={() => navigate("/dashboard/projects")} />
-                  <SidebarButton icon="✉️" label="پیشنهادات من" onClick={() => navigate("/dashboard/proposals")} />
+                  <SidebarButton icon="✉️" label="پیشنهادهای من" onClick={() => navigate("/dashboard/proposals")} />
                   <SidebarButton icon="✏️" label="به‌روزرسانی مهارت‌ها" onClick={() => navigate("/dashboard/profile")} />
                 </>
               )}
@@ -1468,6 +1608,8 @@ function DashboardHome({ user }) {
         </aside>
       </section>
 
+      </div>
+      </div>
       {uploadOpen && editing && (
         <div style={{
           position: "fixed",
@@ -1485,7 +1627,7 @@ function DashboardHome({ user }) {
               background: "rgba(0, 0, 0, 0.7)",
               backdropFilter: "blur(8px)"
             }}
-            onClick={() => { setUploadOpen(false); setEditing(null); }}
+            onClick={closePortfolioEditor}
           />
           <div style={{
             position: "relative",
@@ -1558,7 +1700,7 @@ function DashboardHome({ user }) {
                     {editing.media_type === "video" ? (
                       <video src={editing.filePreviewUrl} controls style={{ width: "100%", maxHeight: 280 }} />
                     ) : (
-                      <img src={editing.filePreviewUrl} alt="preview" style={{ width: "100%", maxHeight: 280, objectFit: "cover" }} />
+                      <ResilientImage src={editing.filePreviewUrl} alt="پیش‌نمایش" style={{ width: "100%", maxHeight: 280, objectFit: "cover" }} />
                     )}
                   </div>
                 )}
@@ -1568,7 +1710,7 @@ function DashboardHome({ user }) {
 
               <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => { setUploadOpen(false); setEditing(null); }}
+                  onClick={closePortfolioEditor}
                   style={{
                     padding: "14px 24px",
                     borderRadius: 12,
@@ -1643,7 +1785,7 @@ function DashboardHome({ user }) {
               {viewerItem.media?.endsWith?.('.mp4') ? (
                 <video src={viewerItem.media} controls style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               ) : viewerItem.media ? (
-                <img src={viewerItem.media} alt={viewerItem.title} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                <ResilientImage src={viewerItem.media} alt={viewerItem.title} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               ) : (
                 <div style={{ color: "#475569", fontSize: 80 }}>🖼️</div>
               )}
@@ -1678,7 +1820,7 @@ function DashboardHome({ user }) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

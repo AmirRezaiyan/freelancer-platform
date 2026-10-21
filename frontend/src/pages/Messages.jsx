@@ -1,10 +1,12 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
 import ChatBox from "../components/ChatBox";
+import ResilientImage from "../components/ResilientImage";
 import { AuthContext } from "../context/auth-context";
 import { Star, User, Shield, Building, Sparkles, CheckCircle, Award } from "lucide-react";
+import { isUnreadFromOther } from "../api/messageState";
 
 const styles = {
   userBadge: {
@@ -203,18 +205,20 @@ export default function Messages() {
   const [loading, setLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(queryProject);
   const [error, setError] = useState(null);
-  const [userRatings, setUserRatings] = useState({}); 
+  const userRatingsCache = useRef(new Map());
 
   useEffect(() => {
     if (queryProject) setSelectedProjectId(queryProject);
   }, [queryProject]);
 
+  useEffect(() => {
+    userRatingsCache.current.clear();
+  }, [userId]);
+
   const fetchUserInfoAndRating = useCallback(async (userId) => {
     if (!userId) return null;
     
-    if (userRatings[userId]) {
-      return userRatings[userId];
-    }
+    if (userRatingsCache.current.has(userId)) return userRatingsCache.current.get(userId);
     
     try {
       let userInfo = null;
@@ -225,7 +229,7 @@ export default function Messages() {
         const userRes = await api.get(`/users/${userId}/`);
         userInfo = userRes.data;
       } catch (err) {
-        console.error("Error fetching user info:", err);
+        console.error("Error fetching user info:", err?.response?.status);
       }
       
       try {
@@ -246,7 +250,7 @@ export default function Messages() {
             avgRating = +(sum / ratingsCount).toFixed(1);
           }
         } catch (err2) {
-          console.error("Error fetching ratings:", err2);
+          console.error("Error fetching ratings:", err2?.response?.status);
         }
       }
       
@@ -256,18 +260,13 @@ export default function Messages() {
         ratingsCount
       };
       
-      // ذخیره در کش
-      setUserRatings(prev => ({
-        ...prev,
-        [userId]: result
-      }));
-      
+      userRatingsCache.current.set(userId, result);
       return result;
     } catch (err) {
-      console.error("Error in fetchUserInfoAndRating:", err);
+      console.error("Error in fetchUserInfoAndRating:", err?.response?.status);
       return null;
     }
-  }, [userRatings]);
+  }, []);
 
   const resolveCounterpartyId = useCallback((project, currentUserType) => {
     if (currentUserType === "client") {
@@ -322,7 +321,7 @@ export default function Messages() {
             counterpartyInfo 
           };
         } catch (err) {
-          console.error("Error loading conversation:", err);
+          console.error("Error loading conversation:", err?.response?.status);
           return { project: proj, lastMessage: record.last_message ?? null, counterpartyInfo: null };
         }
       });
@@ -341,8 +340,8 @@ export default function Messages() {
 
       setConversations(convItems);
     } catch (err) {
-      console.error("loadConversations error", err);
-      setError("خطا در بارگذاری گفتگوها");
+      console.error("loadConversations error", err?.response?.status);
+      setError("بارگذاری پیام‌ها انجام نشد.");
     } finally {
       setLoading(false);
     }
@@ -455,7 +454,7 @@ export default function Messages() {
   };
 
   return (
-    <div style={{ color: "#fff", display: "flex", gap: 20, padding: 16, height: "calc(100vh - 100px)" }}>
+    <div className="messages-page" data-selected={Boolean(selectedProjectId)} style={{ color: "#fff", display: "flex", gap: 20, padding: 16, height: "calc(100vh - 100px)" }}>
       <aside style={{ 
         width: 400, 
         minWidth: 320, 
@@ -517,7 +516,7 @@ export default function Messages() {
             justifyContent: "center"
           }}>
             <div>
-              <div style={{ fontSize: 14, marginBottom: 8 }}>در حال بارگذاری گفتگوها...</div>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>در حال بارگذاری پیام‌ها...</div>
               <div style={{ 
                 width: 40, 
                 height: 40, 
@@ -572,8 +571,10 @@ export default function Messages() {
               const isActive = selectedProjectId && Number(selectedProjectId) === Number(proj.id);
               
               return (
-                <div
+                <button
                   key={proj.id}
+                  type="button"
+                  aria-current={isActive ? "true" : undefined}
                   onClick={() => openConversation(proj.id)}
                   style={{
                     cursor: "pointer",
@@ -617,10 +618,11 @@ export default function Messages() {
                     position: "relative"
                   }}>
                     {c.counterpartyInfo?.userInfo?.avatar ? (
-                      <img 
-                        src={c.counterpartyInfo.userInfo.avatar} 
+                      <ResilientImage
+                        src={c.counterpartyInfo.userInfo.avatar}
                         alt="آواتار"
                         style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        fallback={proj.title?.charAt(0) || "پ"}
                       />
                     ) : (
                       <div style={{ 
@@ -657,7 +659,7 @@ export default function Messages() {
                     </div>
                   </div>
                   
-                  {c.lastMessage && !c.lastMessage.is_read && c.lastMessage.sender_id !== userId && (
+                  {isUnreadFromOther(c.lastMessage, userId) && (
                     <div style={{
                       position: "absolute",
                       top: 12,
@@ -669,7 +671,7 @@ export default function Messages() {
                       boxShadow: "0 0 8px rgba(59, 130, 246, 0.5)"
                     }}></div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -700,6 +702,9 @@ export default function Messages() {
       }}>
         {selectedProjectId ? (
           <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+            <button className="messages-back-to-list" type="button" onClick={() => { setSelectedProjectId(null); navigate("/dashboard/messages"); }}>
+              بازگشت به پیام‌ها
+            </button>
             <ChatBox 
               projectId={selectedProjectId} 
               autoRefresh={true}
@@ -720,7 +725,7 @@ export default function Messages() {
                 یک گفتگو انتخاب کنید
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.6, color: "#9ca3ab8" }}>
-                لیست گفتگوها در سمت چپ نمایش داده می‌شود.<br/>
+                فهرست پیام‌ها اینجا نمایش داده می‌شود.<br/>
                 برای شروع گفتگو به صفحه پروژه بروید و روی «ارسال پیام» کلیک کنید.
               </div>
             </div>

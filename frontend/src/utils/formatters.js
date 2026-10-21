@@ -20,3 +20,14 @@ export function formatDateIran(isoString) {
     return isoString;
   }
 }
+
+const PROJECT_CATEGORIES = {
+  web: "توسعه وب",
+  mobile: "توسعه موبایل",
+  design: "طراحی",
+  other: "سایر",
+};
+
+export function formatProjectCategory(category) {
+  return PROJECT_CATEGORIES[category] || category || "نامشخص";
+}

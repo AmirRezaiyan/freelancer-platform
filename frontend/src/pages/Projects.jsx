@@ -2,20 +2,25 @@ import React, { useEffect, useState, useContext, useMemo } from "react";
 import api from "../api/axios";
 import { Link } from "react-router-dom";
 import { AuthContext } from "../context/auth-context";
-import { formatCurrencyToToman, formatDateIran } from "../utils/formatters";
+import { formatCurrencyToToman, formatDateIran, formatProjectCategory } from "../utils/formatters";
 import fetchAllPages from "../utils/fetchAllPages";
+import { buildProposalPayload, validateProposalBid } from "../utils/proposalPayload";
+import { mergeUniqueRecords } from "../utils/collectPaginatedResults";
 
 export default function Projects() {
   const { user } = useContext(AuthContext);
+  const userId = user?.id;
   const [projects, setProjects] = useState([]);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [skillFilter, setSkillFilter] = useState("");
   const [showOnlyMine, setShowOnlyMine] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [applyingFor, setApplyingFor] = useState(null);
   const [proposal, setProposal] = useState({ cover_letter: "", bid: "" });
@@ -33,6 +38,11 @@ export default function Projects() {
   const [isNarrow, setIsNarrow] = useState(typeof window !== "undefined" ? window.innerWidth <= 1024 : false);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
     const onResize = () => setIsNarrow(window.innerWidth <= 1024);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -42,17 +52,20 @@ export default function Projects() {
     setPage(1);
     setProjects([]);
     setUserRatings({});
-  }, [user?.id]);
+    setHasNextPage(false);
+  }, [userId, debouncedQuery, statusFilter]);
 
   useEffect(() => {
     let mounted = true;
+    const controller = new AbortController();
     const load = async () => {
       setLoading(true);
       try {
         const params = {};
         if (statusFilter) params.status = statusFilter;
+        if (debouncedQuery) params.q = debouncedQuery;
         params.page = page;
-        const res = await api.get("/market/projects/", { params });
+        const res = await api.get("/market/projects/", { params, signal: controller.signal });
         if (!mounted) return;
         const data = Array.isArray(res.data) ? res.data : res.data.results || [];
         setHasNextPage(Boolean(res.data?.next));
@@ -60,11 +73,16 @@ export default function Projects() {
           ...p,
           has_applied: Boolean(p?.has_applied || p?.user_proposal_id),
         }));
-        setProjects((current) => page === 1 ? normalized : [...current, ...normalized]);
+        setProjects((current) => mergeUniqueRecords(page === 1 ? [] : current, normalized));
 
-        if (user) {
+        if (userId) {
           try {
-            const ratingsData = await fetchAllPages("/market/ratings/", { from_user: user.id });
+            const ratingsData = await fetchAllPages(
+              "/market/ratings/",
+              { from_user: userId },
+              { signal: controller.signal },
+            );
+            if (!mounted || controller.signal.aborted) return;
             
             const ratingsMap = {};
             ratingsData.forEach((rating) => {
@@ -81,18 +99,23 @@ export default function Projects() {
             });
             setUserRatings(ratingsMap);
           } catch (err) {
-            console.error("Error loading user ratings:", err);
+            if (controller.signal.aborted) return;
+            console.error("Error loading user ratings:", err?.response?.status);
           }
         }
       } catch (err) {
-        console.error("load projects error", err);
+        if (!mounted || controller.signal.aborted) return;
+        console.error("load projects error", err?.response?.status);
       } finally {
         if (mounted) setLoading(false);
       }
     };
     load();
-    return () => (mounted = false);
-  }, [user, statusFilter, page]);
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
+  }, [userId, statusFilter, page, debouncedQuery]);
 
   const skillsList = useMemo(() => {
     const s = new Set();
@@ -118,7 +141,7 @@ export default function Projects() {
       }
       if (statusFilter && p.status !== statusFilter) return false;
       if (!q) return true;
-      const hay = `${p.title || ""} ${p.description || ""} ${(Array.isArray(p.skills) ? p.skills.join(" ") : p.skills || "")}`.toLowerCase();
+      const hay = `${p.title || ""} ${p.description || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [projects, query, skillFilter, showOnlyMine, user, statusFilter]);
@@ -135,19 +158,23 @@ export default function Projects() {
       return;
     }
     if (submitting) return;
+    if (!proposal.cover_letter.trim()) {
+      setMessage({ type: "error", text: "متن پیشنهاد الزامی است." });
+      return;
+    }
+    const selectedProject = projects.find((project) => String(project.id) === String(projectId));
+    const bidError = validateProposalBid(proposal.bid, selectedProject?.budget_min, selectedProject?.budget_max);
+    if (bidError) {
+      setMessage({ type: "error", text: bidError });
+      return;
+    }
+    const bidValue = Number(proposal.bid);
     setSubmitting(true);
     setMessage(null);
 
     try {
       api.defaults.withCredentials = true;
-      const bidValue = proposal.bid ? (isNaN(Number(proposal.bid)) ? proposal.bid : Number(proposal.bid)) : null;
-      const payload = {
-        project: projectId,
-        cover_letter: proposal.cover_letter,
-        message: proposal.cover_letter,
-        bid: bidValue,
-        bid_amount: bidValue,
-      };
+      const payload = buildProposalPayload(projectId, bidValue, proposal.cover_letter.trim());
       const csrftoken = getCookie("csrftoken");
       const headers = {};
       if (csrftoken) headers["X-CSRFToken"] = csrftoken;
@@ -158,7 +185,6 @@ export default function Projects() {
       setApplyingFor(null);
       setProposal({ cover_letter: "", bid: "" });
     } catch (err) {
-      console.error("proposal error", err);
       const serverData = err?.response?.data;
       let text = "خطا در ارسال درخواست";
       if (serverData) {
@@ -212,30 +238,11 @@ export default function Projects() {
     if (csrftoken) headers["X-CSRFToken"] = csrftoken;
 
     if (!isFreelancerRating) {
-      const tries = [
-        `/market/projects/${projectId}/mark-completed/`,
-        `/market/projects/${projectId}/mark_completed/`,
-        `/market/projects/${projectId}/complete/`,
-        `/market/projects/${projectId}/complete_project/`,
-      ];
-
-      let ok = false, lastErr = null;
-      for (const url of tries) {
-        try {
-          const res = await api.post(url, {}, { headers });
-          if (res.status === 200 || res.status === 201) {
-            ok = true;
-            break;
-          }
-        } catch (err) {
-          lastErr = err;
-        }
-      }
-
-      if (!ok) {
-        console.error("mark completed failed", lastErr);
+      try {
+        await api.post(`/market/projects/${projectId}/complete/`, {}, { headers });
+      } catch (err) {
         let text = "خطا در علامت‌گذاری تکمیل پروژه";
-        if (lastErr?.response?.data?.detail) text = lastErr.response.data.detail;
+        if (err?.response?.data?.detail) text = err.response.data.detail;
         setMessage({ type: "error", text });
         return;
       }
@@ -296,7 +303,7 @@ export default function Projects() {
       setRatingNote("");
       setRatingModalTitle("ثبت امتیاز");
     } catch (err) {
-      console.error("rating error", err);
+      console.error("rating error", err?.response?.status);
       let text = "خطا در ثبت امتیاز";
       const sd = err?.response?.data;
       if (sd?.detail) text = sd.detail;
@@ -338,7 +345,7 @@ export default function Projects() {
       setProjects((prev) => prev.filter((p) => p.id !== projectId));
       setMessage({ type: "success", text: "پروژه با موفقیت حذف شد." });
     } catch (err) {
-      console.error("delete project error", err);
+      console.error("delete project error", err?.response?.status);
       let text = "خطا در حذف پروژه";
       const serverData = err?.response?.data;
       if (serverData && serverData.detail) text = serverData.detail;
@@ -351,7 +358,7 @@ export default function Projects() {
     switch(status) {
       case "open": return "باز";
       case "in_progress": return "در حال انجام";
-      case "completed": return "تمام شده";
+      case "completed": return "تکمیل‌شده";
       default: return status;
     }
   };
@@ -385,22 +392,23 @@ export default function Projects() {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.hero}>
-        <div style={styles.heroOverlay} />
-        <div style={styles.heroContent}>
+    <div className="projects-page" style={styles.container}>
+      <div className="projects-hero" style={styles.hero}>
+        <img className="projects-hero-image" src="/images/marketplace.jpg" alt="" width="1400" height="933" fetchPriority="high" />
+        <div className="projects-hero-shade" style={styles.heroOverlay} />
+        <div className="projects-hero-content" style={styles.heroContent}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
             <div>
               <h1 style={styles.heroTitle}>
                 <span style={styles.titleIcon}>🚀</span>
-                <span style={styles.titleGradient}>پروژه‌های فعال</span>
+                <span style={styles.titleGradient}>پروژه‌ها</span>
               </h1>
-              <p style={styles.heroSubtitle}>پروژه‌های جدید را بررسی کنید و پیشنهاد دهید</p>
+              <p style={styles.heroSubtitle}>پروژه‌ها را بررسی و بر اساس وضعیت یا مهارت فیلتر کنید.</p>
             </div>
 
             {user?.user_type === "client" && (
               <Link to="/dashboard/projects/create" style={styles.createBtn}>
-                + ایجاد پروژه جدید
+                ساخت پروژه
               </Link>
             )}
           </div>
@@ -431,7 +439,7 @@ export default function Projects() {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Link to="/dashboard" style={styles.sidebarLink}><span>🏠</span> داشبورد</Link>
                 <Link to="/dashboard/projects" style={{ ...styles.sidebarLink, background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}><span>📁</span> پروژه‌ها</Link>
-                <Link to="/dashboard/proposals" style={styles.sidebarLink}><span>📄</span> پروپوزال‌ها</Link>
+                <Link to="/dashboard/proposals" style={styles.sidebarLink}><span>📄</span> پیشنهادها</Link>
                 <Link to="/dashboard/messages" style={styles.sidebarLink}><span>💬</span> پیام‌ها</Link>
                 <Link to="/profile" style={styles.sidebarLink}><span>⚙️</span> حساب</Link>
               </div>
@@ -476,12 +484,50 @@ export default function Projects() {
           <div style={styles.searchBar}>
             <div style={styles.searchWrapper}>
               <span style={styles.searchIcon}>🔍</span>
-              <input type="text" placeholder="جستجو در پروژه‌ها، مهارت‌ها..." value={query} onChange={(e) => setQuery(e.target.value)} style={styles.searchInput} />
+              <input type="search" placeholder="جستجو در عنوان و توضیحات پروژه..." value={query} onChange={(e) => setQuery(e.target.value)} style={styles.searchInput} />
             </div>
             {(query || skillFilter || showOnlyMine || statusFilter) && (
               <button onClick={() => { setPage(1); setProjects([]); setQuery(""); setSkillFilter(""); setShowOnlyMine(false); setStatusFilter(""); }} style={styles.clearBtn}>پاک کردن فیلترها</button>
             )}
           </div>
+
+          {isNarrow && (
+            <section className="project-mobile-filters" aria-label="فیلتر پروژه‌ها">
+              <button
+                type="button"
+                aria-expanded={mobileFiltersOpen}
+                onClick={() => setMobileFiltersOpen((open) => !open)}
+              >
+                {mobileFiltersOpen ? "بستن فیلترها" : "فیلتر مهارت و وضعیت"}
+              </button>
+              {mobileFiltersOpen && (
+                <div className="project-mobile-filter-controls">
+                  <label>
+                    مهارت
+                    <select value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)}>
+                      <option value="">همهٔ مهارت‌ها</option>
+                      {skillsList.map((skill) => <option key={skill} value={skill}>{skill}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    وضعیت پروژه
+                    <select value={statusFilter} onChange={(event) => { setPage(1); setProjects([]); setStatusFilter(event.target.value); }}>
+                      <option value="">همهٔ وضعیت‌ها</option>
+                      <option value="open">باز</option>
+                      <option value="in_progress">در حال انجام</option>
+                      <option value="completed">تکمیل‌شده</option>
+                    </select>
+                  </label>
+                  {user?.user_type === "client" && (
+                    <label className="project-mobile-mine-filter">
+                      <input type="checkbox" checked={showOnlyMine} onChange={(event) => setShowOnlyMine(event.target.checked)} />
+                      فقط پروژه‌های من
+                    </label>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           {loading ? (
             <div style={styles.loadingCard}><div style={styles.spinner} /><p>در حال بارگذاری پروژه‌ها...</p></div>
@@ -519,7 +565,7 @@ export default function Projects() {
                     <div style={styles.projectFooter}>
                       <div style={styles.projectMeta}>
                         <span style={styles.metaItem}><span style={styles.metaIcon}>📅</span>{formatDateIran(p.created_at)}</span>
-                        {p.category && (<span style={styles.metaItem}><span style={styles.metaIcon}>📂</span>{p.category}</span>)}
+                        {p.category && (<span style={styles.metaItem}><span style={styles.metaIcon}>📂</span>{formatProjectCategory(p.category)}</span>)}
                       </div>
 
                       <div style={styles.projectActions}>
@@ -532,8 +578,8 @@ export default function Projects() {
                             ) : (
                               applyingFor === p.id ? (
                                 <div style={styles.proposalForm}>
-                                  <textarea placeholder="پیشنهاد خود را بنویسید..." value={proposal.cover_letter} onChange={(e) => setProposal({ ...proposal, cover_letter: e.target.value })} style={styles.proposalTextarea} rows={3} />
-                                  <input placeholder="پیشنهاد قیمت (تومان)" value={proposal.bid} onChange={(e) => setProposal({ ...proposal, bid: e.target.value })} style={styles.proposalInput} />
+                                  <textarea aria-label="متن پیشنهاد" placeholder="پیشنهاد خود را بنویسید..." value={proposal.cover_letter} onChange={(e) => setProposal({ ...proposal, cover_letter: e.target.value })} style={styles.proposalTextarea} rows={3} />
+                                  <input aria-label="مبلغ پیشنهاد به تومان" inputMode="numeric" placeholder="پیشنهاد قیمت (تومان)" value={proposal.bid} onChange={(e) => setProposal({ ...proposal, bid: e.target.value })} style={styles.proposalInput} />
                                   <div style={styles.proposalActions}>
                                     <button onClick={() => setApplyingFor(null)} disabled={submitting} style={styles.cancelBtn}>انصراف</button>
                                     <button onClick={() => submitProposal(p.id)} disabled={submitting} style={styles.submitBtn}>{submitting ? <><span style={styles.smallSpinner} /> ارسال...</> : "✉️ ارسال"}</button>

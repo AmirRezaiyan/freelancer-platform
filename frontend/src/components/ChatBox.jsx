@@ -3,6 +3,7 @@ import { Paperclip, Send, Smile, X, FileText, Download, ExternalLink, Star, User
 import * as MessagesAPI from "../api/messages";
 import { formatDateIran } from "../utils/formatters";
 import UserAvatar from "./UserAvatar";
+import ResilientImage from "./ResilientImage";
 import { AuthContext } from "../context/auth-context";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
@@ -723,7 +724,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                 avgRating = +(sum / ratingsCount).toFixed(1);
               }
             } catch (err2) {
-              console.error("Error fetching ratings:", err2);
+              console.error("Error fetching ratings:", err2?.response?.status);
             }
           }
           
@@ -738,11 +739,11 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
             count: ratingsCount
           });
         } catch (err) {
-          console.error("Error loading counterparty info:", err);
+          console.error("Error loading counterparty info:", err?.response?.status);
         }
       }
     } catch (err) {
-      console.error("Error loading project info:", err);
+      console.error("Error loading project info:", err?.response?.status);
     } finally {
       setLoadingCounterparty(false);
     }
@@ -841,7 +842,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     messages.forEach((message) => {
       if (message.file_url && message.project_id != null && String(message.project_id) === String(projectId)) {
         loadAttachmentUrl(message.file_url, projectId).catch((error) => {
-          console.error("load message attachment", error);
+          console.error("load message attachment", error?.response?.status);
         });
       }
     });
@@ -887,7 +888,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
         });
       }
     } catch (err) {
-      console.error("loadMessages", err);
+      console.error("loadMessages", err?.response?.status);
       if (err?.response?.status === 403 || err?.response?.status === 401) {
         if (mountedRef.current) setMessages([]);
       }
@@ -919,7 +920,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       setOlderPage(response?.next ? olderPage + 1 : null);
     } catch (error) {
       preserveScrollRef.current = null;
-      console.error("load older messages", error);
+      console.error("load older messages", error?.response?.status);
     } finally {
       setLoadingOlder(false);
     }
@@ -981,7 +982,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       removeFile();
       setShowStickers(false);
     } catch (err) {
-      console.error("send message", err);
+      console.error("send message", err?.response?.status);
       const status = err?.response?.status;
       if (status === 403) {
         alert("ارسال پیام قبل از استخدام مجاز نیست.");
@@ -1062,15 +1063,11 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
         {/* آواتار کاربر مقابل */}
         <div style={styles.userAvatar}>
           {avatarSrc ? (
-            <img 
-              src={avatarSrc} 
+            <ResilientImage
+              src={avatarSrc}
               alt={displayName}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.style.display = "none";
-                e.target.parentNode.innerHTML = '<User size={24} color="#ffffff" />';
-              }}
+              fallback={<User size={24} color="#ffffff" />}
             />
           ) : (
             <User size={24} color="#ffffff" />
@@ -1122,7 +1119,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   };
 
   return (
-    <div style={styles.wrap}>
+    <div className="chat-panel" style={styles.wrap}>
       {renderUserProfileHeader()}
 
       <div ref={messagesContainerRef} style={styles.messagesContainer}>
@@ -1148,7 +1145,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
             const key = m.id != null ? `msg-${m.id}` : `tmp-${idx}`;
 
             return (
-              <div key={key} style={m.is_mine ? styles.rowRight : styles.rowLeft}>
+              <div key={key} className="chat-message-row" style={m.is_mine ? styles.rowRight : styles.rowLeft}>
                 <div style={m.is_mine ? styles.msgGroupRight : styles.msgGroupLeft}>
                   {!m.is_mine && (
                     <div style={{ position: "relative" }}>
@@ -1166,15 +1163,16 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                     </div>
                   )}
 
-                  <div style={m.is_mine ? styles.bubbleMine : styles.bubbleOther}>
+                  <div className={m.is_mine ? "chat-message-bubble mine" : "chat-message-bubble"} style={m.is_mine ? styles.bubbleMine : styles.bubbleOther}>
                     {m.file_url && (
                       <div style={styles.attachmentContainer}>
                         {fileType === "image" ? (
                           <div style={styles.imageContainer}>
-                            <img
-                                src={attachmentUrls[m.file_url] || ""}
+                            <ResilientImage
+                              src={attachmentUrls[m.file_url]}
                               alt="تصویر"
                               style={styles.attachmentImage}
+                              fallback={<span>تصویر در دسترس نیست</span>}
                                 onClick={() => {
                                   const imageUrl = attachmentUrls[m.file_url];
                                   if (imageUrl) openImageViewer(imageUrl, fileName);
@@ -1227,8 +1225,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                       </div>
                     )}
 
-                    {m.content && <div style={styles.msgText}>{m.content}</div>}
-                    <div style={styles.msgTime}>{formatDateIran(m.created_at)}</div>
+                    {m.content && <div className="chat-message-text" style={styles.msgText}>{m.content}</div>}
+                    <div className="chat-message-time" style={styles.msgTime}>{formatDateIran(m.created_at)}</div>
                   </div>
 
                   {m.is_mine && (
@@ -1260,7 +1258,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
             <button style={styles.modalCloseBtn} onClick={closeImageViewer} title="بستن">
               <X size={18} />
             </button>
-            <img src={imageViewer.url} alt={imageViewer.name || "image"} style={styles.modalImage} />
+            <ResilientImage src={imageViewer.url} alt={imageViewer.name || "تصویر"} style={styles.modalImage} />
             <div style={styles.modalActions}>
               <button
                 style={styles.modalDownloadBtn}
@@ -1278,7 +1276,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {imagePreview ? (
               <div style={styles.previewImageBox}>
-                <img src={imagePreview} alt="پیش‌نمایش" style={styles.previewImage} />
+                <ResilientImage src={imagePreview} alt="پیش‌نمایش" style={styles.previewImage} />
               </div>
             ) : (
               <div style={styles.iconBox}>
@@ -1321,7 +1319,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
         </div>
       )}
 
-      <form onSubmit={send} style={styles.inputArea}>
+      <form className="chat-composer" onSubmit={send} style={styles.inputArea}>
         <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: "none" }} />
 
         <button

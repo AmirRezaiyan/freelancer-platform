@@ -10,12 +10,7 @@ export default function ProjectCreate() {
     budget_min: "",
     budget_max: "",
     skills: "",
-    category: "web", 
-    deadline: "",
-    project_type: "fixed",
-    experience_level: "intermediate",
-    duration: "",
-    location: ""
+    category: "web"
   });
 
   const [loading, setLoading] = useState(false);
@@ -76,14 +71,21 @@ export default function ProjectCreate() {
 
   const submit = async (e) => {
     e.preventDefault();
+    const budgetMin = Number(form.budget_min);
+    const budgetMax = Number(form.budget_max);
+    if (!Number.isInteger(budgetMin) || budgetMin < 1) {
+      setErrors({ budget_min: "حداقل بودجه باید عدد صحیح و مثبت باشد." });
+      return;
+    }
+    if (!Number.isInteger(budgetMax) || budgetMax < 1 || budgetMax < budgetMin) {
+      setErrors({ budget_max: "حداکثر بودجه باید عدد صحیح و برابر یا بیشتر از حداقل بودجه باشد." });
+      return;
+    }
     setLoading(true);
     setErrors(null);
     setSuccess(null);
 
     try {
-      console.log("داده‌های فرم:", form);
-      console.log("دسته‌بندی انتخاب شده:", form.category);
-
       const payload = {
         title: form.title.trim(),
         description: form.description.trim(),
@@ -94,16 +96,7 @@ export default function ProjectCreate() {
           form.skills ? form.skills.split(",").map(s => s.trim()).filter(Boolean) : [],
       };
 
-      if (form.deadline) payload.deadline = form.deadline;
-      if (form.project_type) payload.project_type = form.project_type;
-      if (form.experience_level) payload.experience_level = form.experience_level;
-      if (form.duration) payload.duration = form.duration;
-      if (form.location) payload.location = form.location;
-
-      console.log("Payload ارسالی به /market/projects/:", payload);
-
-      const response = await api.post("/market/projects/", payload);
-      console.log("پاسخ سرور:", response.data);
+      await api.post("/market/projects/", payload);
 
       setSuccess("✅ پروژه با موفقیت ایجاد شد!");
 
@@ -112,11 +105,8 @@ export default function ProjectCreate() {
       }, 2000);
 
     } catch (err) {
-      console.error("خطا در ایجاد پروژه:", err);
-
       if (err.response) {
         const errorData = err.response.data;
-        console.error("داده‌های خطا:", errorData);
 
         if (typeof errorData === 'string') {
           setErrors({ general: errorData });
@@ -598,7 +588,7 @@ export default function ProjectCreate() {
   };
 
   return (
-    <div style={styles.container}>
+    <div className="project-create-page" style={styles.container}>
       <div style={styles.header}>
         <div style={styles.breadcrumb}>
           <button
@@ -608,12 +598,12 @@ export default function ProjectCreate() {
             ← بازگشت به پروژه‌ها
           </button>
           <span style={styles.breadcrumbSeparator}>/</span>
-          <span style={styles.breadcrumbCurrent}>ایجاد پروژه جدید</span>
+          <span style={styles.breadcrumbCurrent}>ساخت پروژه</span>
         </div>
 
-        <h1 style={styles.title}>ایجاد پروژه جدید</h1>
+        <h1 style={styles.title}>ساخت پروژه</h1>
         <p style={{ color: '#94a3b8', margin: 0 }}>
-          پروژه خود را ایجاد کنید تا فریلنسرهای مناسب برای آن درخواست دهند
+          جزئیات پروژه را ثبت کنید تا فریلنسرها بتوانند پیشنهاد ارسال کنند.
         </p>
       </div>
 
@@ -622,8 +612,8 @@ export default function ProjectCreate() {
           <div style={styles.cardIcon}>🚀</div>
           <div>
             <h2 style={styles.cardTitle}>جزئیات پروژه</h2>
-            <p style={styles.cardSubtitle}>
-              اطلاعات پروژه خود را با دقت وارد کنید تا فریلنسرهای مناسب را جذب نمایید
+                <p style={styles.cardSubtitle}>
+              اطلاعات پروژه را روشن و کامل ثبت کنید تا پیشنهادهای دقیق‌تری دریافت کنید.
             </p>
           </div>
         </div>
@@ -658,11 +648,12 @@ export default function ProjectCreate() {
 
         <form onSubmit={submit} style={styles.form}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>
+            <label htmlFor="create-project-title" style={styles.label}>
               عنوان پروژه *
               <span style={styles.labelHint}>(حداکثر 255 کاراکتر)</span>
             </label>
             <input
+              id="create-project-title"
               name="title"
               placeholder="مثال: توسعه وب‌سایت فروشگاهی با React و Django"
               value={form.title}
@@ -677,11 +668,12 @@ export default function ProjectCreate() {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>
+            <label htmlFor="create-project-description" style={styles.label}>
               توضیحات پروژه *
               <span style={styles.labelHint}>(شرح کامل و دقیق پروژه)</span>
             </label>
             <textarea
+              id="create-project-description"
               name="description"
               placeholder="پروژه خود را به طور کامل شرح دهید. شامل اهداف، ویژگی‌های مورد نیاز، نکات فنی و هر مورد دیگری که فریلنسر باید بداند..."
               value={form.description}
@@ -691,7 +683,7 @@ export default function ProjectCreate() {
               required
             />
             <div style={styles.textareaTips}>
-              <span style={styles.tip}>💡 نکته: توضیحات کامل شانس موفقیت پروژه را ۴۰٪ افزایش می‌دهد</span>
+              <span style={styles.tip}>💡 شرح روشن، نیازها و خروجی مورد انتظار را مشخص می‌کند.</span>
             </div>
           </div>
 
@@ -699,10 +691,12 @@ export default function ProjectCreate() {
             <label style={styles.label}>بودجه پروژه (تومان) *</label>
             <div style={styles.budgetContainer}>
               <div style={styles.budgetInputGroup}>
-                <label style={styles.budgetLabel}>حداقل بودجه *</label>
+                <label htmlFor="create-project-budget-min" style={styles.budgetLabel}>حداقل بودجه *</label>
                 <div style={styles.currencyInput}>
                   <input
+                    id="create-project-budget-min"
                     name="budget_min"
+                    inputMode="numeric"
                     placeholder="مثال: 1000000"
                     value={formatNumber(form.budget_min)}
                     onChange={handleBudgetChange}
@@ -716,10 +710,12 @@ export default function ProjectCreate() {
               <div style={styles.budgetSeparator}>تا</div>
 
               <div style={styles.budgetInputGroup}>
-                <label style={styles.budgetLabel}>حداکثر بودجه *</label>
+                <label htmlFor="create-project-budget-max" style={styles.budgetLabel}>حداکثر بودجه *</label>
                 <div style={styles.currencyInput}>
                   <input
+                    id="create-project-budget-max"
                     name="budget_max"
+                    inputMode="numeric"
                     placeholder="مثال: 5000000"
                     value={formatNumber(form.budget_max)}
                     onChange={handleBudgetChange}
@@ -736,36 +732,31 @@ export default function ProjectCreate() {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>دسته‌بندی پروژه *</label>
-            <div style={styles.categoryGrid}>
+            <div style={styles.label} id="project-category-label">دسته‌بندی پروژه *</div>
+            <div style={styles.categoryGrid} role="group" aria-labelledby="project-category-label">
               {categories.map((category) => (
-                <div
+                <button
                   key={category.value}
+                  type="button"
+                  aria-pressed={form.category === category.value}
                   style={{
                     ...styles.categoryOption,
                     ...(form.category === category.value ? styles.selectedCategory : {})
                   }}
-                  onClick={() => setForm({ ...form, category: category.value })}
+                  onClick={() => setForm((current) => ({ ...current, category: category.value }))}
                 >
                   <div style={styles.categoryIcon}>{category.icon}</div>
                   <div style={styles.categoryLabel}>{category.label}</div>
-                </div>
+                </button>
               ))}
             </div>
-            <input
-              type="hidden"
-              name="category"
-              value={form.category}
-              onChange={onChange}
-              required
-            />
             <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '5px' }}>
               انتخاب شده: {categories.find(c => c.value === form.category)?.label}
             </div>
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>
+            <label htmlFor="create-project-skills" style={styles.label}>
               مهارت‌های مورد نیاز
               <span style={styles.labelHint}>(حداکثر ۸ مهارت، با کاما جدا کنید)</span>
             </label>
@@ -788,6 +779,7 @@ export default function ProjectCreate() {
             )}
 
             <input
+              id="create-project-skills"
               name="skills"
               placeholder="مثال: React, JavaScript, Python, Django"
               value={form.skills}
@@ -812,75 +804,6 @@ export default function ProjectCreate() {
                     {skill}
                   </button>
                 ))}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '20px' }}>
-            <h3 style={{ color: '#fff', marginBottom: '20px', fontSize: '18px' }}>
-              ⚙️ تنظیمات پیشرفته (اختیاری)
-            </h3>
-
-            <div style={styles.grid}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>نوع پروژه</label>
-                <select
-                  name="project_type"
-                  value={form.project_type}
-                  onChange={onChange}
-                  style={styles.select}
-                >
-                  <option value="fixed">قیمت ثابت</option>
-                  <option value="hourly">ساعتی</option>
-                </select>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>سطح تجربه مورد نیاز</label>
-                <select
-                  name="experience_level"
-                  value={form.experience_level}
-                  onChange={onChange}
-                  style={styles.select}
-                >
-                  <option value="beginner">مبتدی</option>
-                  <option value="intermediate">متوسط</option>
-                  <option value="expert">حرفه‌ای</option>
-                </select>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>مدت زمان تخمینی</label>
-                <input
-                  name="duration"
-                  placeholder="مثال: ۲ هفته"
-                  value={form.duration}
-                  onChange={onChange}
-                  style={styles.input}
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>مهلت تحویل</label>
-                <input
-                  type="date"
-                  name="deadline"
-                  value={form.deadline}
-                  onChange={onChange}
-                  style={styles.input}
-                  min={new Date().toISOString().split('T')[0]}
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>موقعیت مکانی</label>
-                <input
-                  name="location"
-                  placeholder="مثال: تهران، ایران"
-                  value={form.location}
-                  onChange={onChange}
-                  style={styles.input}
-                />
               </div>
             </div>
           </div>
@@ -913,10 +836,10 @@ export default function ProjectCreate() {
                     borderRadius: '50%',
                     animation: 'spin 1s linear infinite'
                   }}></span>
-                  در حال ایجاد پروژه...
+                  در حال ساخت پروژه...
                 </>
               ) : (
-                '🚀 ایجاد پروژه'
+                '🚀 ساخت پروژه'
               )}
             </button>
           </div>
