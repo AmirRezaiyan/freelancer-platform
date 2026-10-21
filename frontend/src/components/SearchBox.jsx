@@ -17,7 +17,7 @@ export default function SearchBox({ onSelect }) {
       const res = await api.get("/market/projects/", { params: { q: term } }); 
       const list = Array.isArray(res.data) ? res.data : res.data.results || [];
       setResults(list);
-    } catch (err) {
+    } catch {
       setResults([]);
     } finally {
       setLoading(false);

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api/axios";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 
 export default function ProjectEdit() {
   const { id } = useParams();

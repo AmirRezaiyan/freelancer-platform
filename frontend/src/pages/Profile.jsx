@@ -1,6 +1,6 @@
-import React, { useContext, useEffect, useState, useRef } from "react";
+import React, { useCallback, useContext, useEffect, useState, useRef } from "react";
 import api from "../api/axios";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 import { formatDateIran } from "../utils/formatters";
 import fetchAllPages from "../utils/fetchAllPages";
 
@@ -371,7 +371,7 @@ export default function Profile() {
               try {
                 const parsed = JSON.parse(u.skills);
                 return Array.isArray(parsed) ? parsed : u.skills.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
-              } catch (e) {
+              } catch {
                 return u.skills.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
               }
             })()
@@ -383,7 +383,7 @@ export default function Profile() {
               try {
                 const parsed = JSON.parse(u.languages);
                 return Array.isArray(parsed) ? parsed : u.languages.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
-              } catch (e) {
+              } catch {
                 return u.languages.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
               }
             })()
@@ -398,7 +398,7 @@ export default function Profile() {
               try {
                 const parsed = JSON.parse(u.business_fields);
                 return Array.isArray(parsed) ? parsed : u.business_fields.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
-              } catch (e) {
+              } catch {
                 return u.business_fields.split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean);
               }
             })()
@@ -474,7 +474,7 @@ export default function Profile() {
           } else {
             setAverageRating(0);
           }
-        } catch (err) {
+        } catch {
           console.log("Using fallback endpoint for reviews");
           const data = await fetchAllPages("/market/ratings/", { user_to: u.id });
           
@@ -531,26 +531,20 @@ export default function Profile() {
   useEffect(() => {
     return () => {
       if (prevBlobRef.current && prevBlobRef.current.startsWith("blob:")) {
-        try {
-          URL.revokeObjectURL(prevBlobRef.current);
-        } catch (e) {}
+        URL.revokeObjectURL(prevBlobRef.current);
         prevBlobRef.current = null;
       }
       if (cropImageUrl) {
-        try {
-          URL.revokeObjectURL(cropImageUrl);
-        } catch (e) {}
+        URL.revokeObjectURL(cropImageUrl);
       }
     };
-  }, []);
+  }, [cropImageUrl]);
 
 
   const openCropForFile = (file) => {
     const obj = URL.createObjectURL(file);
     if (cropImageUrl) {
-      try {
-        URL.revokeObjectURL(cropImageUrl);
-      } catch {}
+      URL.revokeObjectURL(cropImageUrl);
     }
     setCropImageUrl(obj);
     setCropOpen(true);
@@ -605,7 +599,12 @@ export default function Profile() {
     dragStartRef.current = { x: pageX, y: pageY, offsetX: offset.x, offsetY: offset.y };
   };
 
-  const onDragMove = (e) => {
+  const endDrag = useCallback(() => {
+    setDragging(false);
+    dragStartRef.current = null;
+  }, []);
+
+  const onDragMove = useCallback((e) => {
     if (!dragging) return;
     e.preventDefault();
     const pageX = e.touches ? e.touches[0].pageX : e.pageX;
@@ -620,27 +619,16 @@ export default function Profile() {
     const dispH = cropNatural.h * scaleTotal;
 
     const minX = Math.min(0, CROP_BOX - dispW);
-    const maxX = 0;
     const minY = Math.min(0, CROP_BOX - dispH);
-    const maxY = 0;
-
-    if (nx < minX) nx = minX;
-    if (nx > maxX) nx = maxX;
-    if (ny < minY) ny = minY;
-    if (ny > maxY) ny = maxY;
-
+    nx = Math.max(minX, Math.min(0, nx));
+    ny = Math.max(minY, Math.min(0, ny));
     setOffset({ x: nx, y: ny });
-  };
-
-  const endDrag = (e) => {
-    setDragging(false);
-    dragStartRef.current = null;
-  };
+  }, [cropNatural, cropScale, cropScaleBase, dragging]);
 
   useEffect(() => {
     if (!cropOpen) return;
     const onUp = () => endDrag();
-    const onMove = (ev) => onDragMove(ev);
+    const onMove = (event) => onDragMove(event);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("touchend", onUp, { passive: false });
     window.addEventListener("mousemove", onMove);
@@ -651,7 +639,7 @@ export default function Profile() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("touchmove", onMove);
     };
-  }, [cropOpen, dragging, cropNatural, cropScale, cropScaleBase, offset]);
+  }, [cropOpen, endDrag, onDragMove]);
 
   const onZoomChange = (value) => {
     const oldScaleTotal = cropScaleBase * cropScale;
@@ -718,9 +706,7 @@ export default function Profile() {
     const file = new File([blob], "avatar.png", { type: "image/png" });
 
     if (prevBlobRef.current && prevBlobRef.current.startsWith("blob:")) {
-      try {
-        URL.revokeObjectURL(prevBlobRef.current);
-      } catch {}
+      URL.revokeObjectURL(prevBlobRef.current);
     }
 
     const blobUrl = URL.createObjectURL(blob);
@@ -729,11 +715,7 @@ export default function Profile() {
     setForm((s) => ({ ...s, avatar: file }));
     setPreview(blobUrl);
 
-    try {
-      if (cropImageUrl) {
-        URL.revokeObjectURL(cropImageUrl);
-      }
-    } catch {}
+    if (cropImageUrl) URL.revokeObjectURL(cropImageUrl);
     setCropImageUrl(null);
     setCropOpen(false);
     setCropNatural({ w: 0, h: 0 });
@@ -744,9 +726,7 @@ export default function Profile() {
 
   const cancelCrop = () => {
     if (cropImageUrl) {
-      try {
-        URL.revokeObjectURL(cropImageUrl);
-      } catch {}
+      URL.revokeObjectURL(cropImageUrl);
     }
     setCropImageUrl(null);
     setCropOpen(false);
@@ -756,15 +736,6 @@ export default function Profile() {
     setOffset({ x: 0, y: 0 });
   };
 
-  const onChange = (e) => {
-    const { name, value, files } = e.target;
-    if (name === "avatar" && files && files[0]) {
-      onFileSelected(files[0]);
-    } else {
-      setForm((s) => ({ ...s, [name]: value }));
-    }
-  };
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setForm((s) => ({ ...s, [name]: value }));
@@ -772,9 +743,7 @@ export default function Profile() {
 
   const removeSelectedAvatar = () => {
     if (prevBlobRef.current && prevBlobRef.current.startsWith("blob:")) {
-      try {
-        URL.revokeObjectURL(prevBlobRef.current);
-      } catch (e) {}
+      URL.revokeObjectURL(prevBlobRef.current);
       prevBlobRef.current = null;
     }
     setForm((s) => ({ ...s, avatar: null }));
@@ -859,9 +828,7 @@ export default function Profile() {
       const avatarUrl = returnedUser?.avatar ?? res?.data?.avatar ?? null;
       if (avatarUrl) {
         if (prevBlobRef.current && prevBlobRef.current.startsWith("blob:")) {
-          try {
-            URL.revokeObjectURL(prevBlobRef.current);
-          } catch (e) {}
+          URL.revokeObjectURL(prevBlobRef.current);
           prevBlobRef.current = null;
         }
         setPreview(avatarUrl);

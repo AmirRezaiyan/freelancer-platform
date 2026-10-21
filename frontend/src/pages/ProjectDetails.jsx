@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
@@ -649,8 +649,6 @@ export default function ProjectDetails() {
         setProject(projectData);
 
         if (userData) {
-          const clientFromProject = projectData.client ?? projectData.owner ?? projectData.created_by ?? projectData;
-
           const clientIdResolved =
             resolveEntityId(projectData.client) ||
             resolveEntityId(projectData.client_id) ||
@@ -732,11 +730,11 @@ export default function ProjectDetails() {
               try {
                 const userRes = await api.get(`/users/${freelancerId}/`);
                 freelancerDetails = userRes.data;
-              } catch (e1) {
+              } catch {
                 try {
                   const marketRes = await api.get(`/market/users/${freelancerId}/`);
                   freelancerDetails = marketRes.data;
-                } catch (e2) {
+                } catch {
                   freelancerDetails = null;
                 }
               }
@@ -754,7 +752,7 @@ export default function ProjectDetails() {
                   ratingsCount = ratingsData.length;
                   avgRating = +(sum / ratingsCount).toFixed(1);
                 }
-              } catch (e1) {
+              } catch {
                 try {
                   const altData = await fetchAllPages("/market/ratings/", { user_to: freelancerId });
 
@@ -763,7 +761,9 @@ export default function ProjectDetails() {
                     ratingsCount = altData.length;
                     avgRating = +(sum / ratingsCount).toFixed(1);
                   }
-                } catch (e2) {
+                } catch {
+                  avgRating = 0;
+                  ratingsCount = 0;
                 }
               }
             }
@@ -913,7 +913,7 @@ export default function ProjectDetails() {
     setActionLoading(prev => ({ ...prev, [proposalId]: true }));
 
     try {
-      const res = await api.post(`/market/proposals/${proposalId}/hire/`);
+      await api.post(`/market/proposals/${proposalId}/hire/`);
 
       setProposals(prev => prev.map(proposal =>
         proposal.id === proposalId

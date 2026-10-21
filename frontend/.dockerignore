@@ -1,0 +1,11 @@
+git
+.env
+.env.
+env.example
+node_modules/
+dist/
+vite/
+coverage/
+nyc_output/
+eslintcache
+npm-debug.log

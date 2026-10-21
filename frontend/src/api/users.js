@@ -6,8 +6,8 @@ const UsersAPI = {
     return res.data;
   },
 
-  updateProfile: async (userId, data) => {
-    const res = await api.put(`/users/${userId}/`, data);
+  updateProfile: async (data) => {
+    const res = await api.put("/users/me/", data);
     return res.data;
   },
 

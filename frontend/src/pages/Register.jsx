@@ -3,7 +3,7 @@ import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, User, Sparkles, UserPlus, Briefcase, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000/api").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8001/api").replace(/\/+$/, "");
 
 const api = axios.create({
   baseURL: API_BASE_URL,

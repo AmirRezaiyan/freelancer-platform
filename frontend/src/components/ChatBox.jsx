@@ -3,7 +3,7 @@ import { Paperclip, Send, Smile, X, FileText, Download, ExternalLink, Star, User
 import * as MessagesAPI from "../api/messages";
 import { formatDateIran } from "../utils/formatters";
 import UserAvatar from "./UserAvatar";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
 
@@ -602,7 +602,7 @@ const renderStatusBadge = (status) => {
   }
 };
 
-export default function ChatBox({ projectId, autoRefresh = false, currentUserType, currentUserId }) {
+export default function ChatBox({ projectId, autoRefresh = false, currentUserType }) {
   const { user } = useContext(AuthContext);
   const currentUser = user?.user ?? user ?? null;
   const myId = currentUser?.id ?? currentUser?.pk ?? null;
@@ -632,6 +632,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   const pollRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const loadMessagesRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const preserveScrollRef = useRef(null);
 
@@ -712,7 +713,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
               ratingsCount = ratingsData.length;
               avgRating = +(sum / ratingsCount).toFixed(1);
             }
-          } catch (err) {
+          } catch {
             try {
               const altData = await fetchAllPages("/market/ratings/", { user_to: counterpartyId });
               
@@ -755,13 +756,13 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     setCounterpartyInfo(null);
     setCounterpartyRating({ rating: 0, count: 0 });
     
-    loadMessages();
+    loadMessagesRef.current?.();
     loadProjectAndCounterpartyInfo();
 
     if (autoRefresh) {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(() => {
-        loadMessages(false);
+        loadMessagesRef.current?.(false);
       }, 8000);
     }
 
@@ -772,7 +773,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
         pollRef.current = null;
       }
     };
-  }, [projectId]);
+  }, [projectId, autoRefresh, loadProjectAndCounterpartyInfo]);
 
   const mapMessage = (m) => {
     if (!m) return null;
@@ -894,6 +895,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       if (withLoading) setLoading(false);
     }
   };
+
+  loadMessagesRef.current = loadMessages;
 
   const loadOlderMessages = async () => {
     if (!projectId || !olderPage || loadingOlder) return;

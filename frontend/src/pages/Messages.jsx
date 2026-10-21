@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
 import ChatBox from "../components/ChatBox";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 import { Star, User, Shield, Building, Sparkles, CheckCircle, Award } from "lucide-react";
 
 const styles = {
@@ -236,7 +236,7 @@ export default function Messages() {
           ratingsCount = ratingsData.length;
           avgRating = +(sum / ratingsCount).toFixed(1);
         }
-      } catch (err) {
+      } catch {
         try {
           const altData = await fetchAllPages("/market/ratings/", { user_to: userId });
           
@@ -269,7 +269,7 @@ export default function Messages() {
     }
   }, [userRatings]);
 
-  const resolveCounterpartyId = useCallback((project, currentUserType, currentUserId) => {
+  const resolveCounterpartyId = useCallback((project, currentUserType) => {
     if (currentUserType === "client") {
       if (project.hired_freelancer) {
         if (typeof project.hired_freelancer === "object") {
@@ -299,47 +299,17 @@ export default function Messages() {
     setLoading(true);
     setError(null);
     try {
-      let projectList = [];
-
       if (!userId) {
         setConversations([]);
         setLoading(false);
         return;
       }
 
-      if (userType === "client") {
-        const res = await api.get("/market/projects/");
-        const all = Array.isArray(res.data) ? res.data : (res.data?.results || res.data || []);
-        projectList = all.filter(p => {
-          if (!p) return false;
-          if (typeof p.client === "number") return Number(p.client) === Number(userId);
-          if (typeof p.client === "object") return (p.client.id ?? p.client.pk) === userId;
-          return false;
-        });
-      } else {
-        const pr = await api.get("/market/proposals/mine/");
-        const proposals = Array.isArray(pr.data) ? pr.data : (pr.data?.results || pr.data || []);
-        const projectIds = Array.from(new Set(proposals.map(p => {
-          if (!p) return null;
-          if (typeof p.project === "number") return p.project;
-          if (typeof p.project === "object") return (p.project.id ?? p.project.pk);
-          if (p.projectId) return p.projectId;
-          return null;
-        }).filter(Boolean)));
-
-        const projectsFetched = await Promise.allSettled(projectIds.map(pid => api.get(`/market/projects/${pid}/`)));
-        projectList = projectsFetched
-          .filter(r => r.status === "fulfilled" && r.value?.data)
-          .map(r => r.value.data);
-      }
-
-      const convPromises = projectList.map(async (proj) => {
+      const conversationRecords = await fetchAllPages("/market/conversations/");
+      const convPromises = conversationRecords.map(async (record) => {
+        const proj = record.project;
         try {
-          const msgsRes = await api.get(`/market/projects/${proj.id}/user_messages/`);
-          const msgs = Array.isArray(msgsRes.data) ? msgsRes.data : (msgsRes.data?.results || msgsRes.data || []);
-          const last = msgs.length ? msgs[0] : null;
-          
-          const counterpartyId = resolveCounterpartyId(proj, userType, userId);
+          const counterpartyId = resolveCounterpartyId(proj, userType);
           let counterpartyInfo = null;
           
           if (counterpartyId) {
@@ -348,12 +318,12 @@ export default function Messages() {
           
           return { 
             project: proj, 
-            lastMessage: last,
+            lastMessage: record.last_message,
             counterpartyInfo 
           };
         } catch (err) {
           console.error("Error loading conversation:", err);
-          return { project: proj, lastMessage: null, counterpartyInfo: null };
+          return { project: proj, lastMessage: record.last_message ?? null, counterpartyInfo: null };
         }
       });
 
@@ -734,7 +704,6 @@ export default function Messages() {
               projectId={selectedProjectId} 
               autoRefresh={true}
               currentUserType={userType}
-              currentUserId={userId}
             />
           </div>
         ) : (

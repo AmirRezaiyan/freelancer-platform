@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useContext } from "react";
 import api from "../api/axios";
+import { proposalDetailPath } from "../api/paths";
 import { Link } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 import { formatCurrencyToToman, formatDateIran } from "../utils/formatters";
 
 export default function Proposals() {
@@ -19,6 +20,11 @@ export default function Proposals() {
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState(null);
+
+  useEffect(() => {
+    setPage(1);
+    setProposals([]);
+  }, [user?.id]);
   
   useEffect(() => {
     let mounted = true;
@@ -58,7 +64,7 @@ export default function Proposals() {
       const headers = {};
       if (csrftoken) headers["X-CSRFToken"] = csrftoken;
 
-      await api.delete(`/api/market/proposals/${id}/`, { headers });
+      await api.delete(proposalDetailPath(id), { headers });
       setProposals(prev => prev.filter(p => p.id !== id));
     } catch (err) {
       console.error("withdraw error", err);
@@ -88,7 +94,7 @@ export default function Proposals() {
         bid: editing.bid
       };
 
-      const res = await api.patch(`/api/market/proposals/${editing.id}/`, payload, { headers });
+      const res = await api.patch(proposalDetailPath(editing.id), payload, { headers });
       const updated = Array.isArray(res.data) ? res.data[0] : res.data;
       setProposals(prev => prev.map(p => p.id === editing.id ? { ...p, ...updated } : p));
       setEditing(null);

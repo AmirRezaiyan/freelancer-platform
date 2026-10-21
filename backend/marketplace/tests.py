@@ -1,7 +1,10 @@
 import io
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from django.db import connection
-from django.test import TestCase
+from django.db import close_old_connections
+from django.test import TestCase, TransactionTestCase
 from django.test.utils import CaptureQueriesContext
 from django.test import SimpleTestCase
 from django.test import override_settings
@@ -10,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from .models import Project, Proposal, ProjectMessage, Portfolio, Wallet, ActivityLog, Rating
 from .serializers import ProjectSerializer
 from rest_framework.test import APIClient, APIRequestFactory
+from unittest import skipUnless
 from unittest.mock import patch
 from django.db import IntegrityError, transaction
 from PIL import Image
@@ -160,6 +164,27 @@ class MarketplaceAuthorizationAPITests(TestCase):
 		self.assertEqual(self.api.delete(f"/api/market/proposals/{self.proposal.id}/").status_code, 204)
 		self.assertFalse(Proposal.objects.filter(pk=self.proposal.id).exists())
 
+	def test_accepted_proposal_cannot_be_edited_or_withdrawn(self):
+		self.project.status = "in_progress"
+		self.project.hired_freelancer = self.freelancer
+		self.project.save(update_fields=["status", "hired_freelancer"])
+		self.proposal.status = "accepted"
+		self.proposal.save(update_fields=["status"])
+		self.api.force_authenticate(user=self.freelancer)
+
+		update_response = self.api.patch(
+			f"/api/market/proposals/{self.proposal.id}/",
+			{"message": "Changed after hiring"},
+			format="json",
+		)
+		delete_response = self.api.delete(f"/api/market/proposals/{self.proposal.id}/")
+
+		self.assertEqual(update_response.status_code, 400)
+		self.assertEqual(delete_response.status_code, 400)
+		self.proposal.refresh_from_db()
+		self.assertEqual(self.proposal.status, "accepted")
+		self.assertEqual(self.proposal.message, "Confidential proposal")
+
 	def test_unrelated_user_cannot_edit_or_withdraw_proposal(self):
 		self.api.force_authenticate(user=self.other_freelancer)
 		response = self.api.patch(
@@ -267,6 +292,93 @@ class MarketplaceAuthorizationAPITests(TestCase):
 			"active_contracts": 0,
 			"earnings": 0,
 		})
+
+	def test_conversation_list_is_paginated_and_scoped_to_hired_projects(self):
+		Project.objects.bulk_create([
+			Project(
+				title=f"Conversation {index}",
+				description="Conversation project",
+				budget_min=100,
+				budget_max=200,
+				category="web",
+				client=self.client_user,
+				hired_freelancer=self.freelancer,
+				status="in_progress",
+			)
+			for index in range(21)
+		])
+		foreign_project = Project.objects.create(
+			title="Another client's conversation",
+			description="Private conversation",
+			budget_min=100,
+			budget_max=200,
+			category="web",
+			client=self.other_client,
+			hired_freelancer=self.other_freelancer,
+			status="in_progress",
+		)
+		self.api.force_authenticate(user=self.client_user)
+
+		response = self.api.get("/api/market/conversations/")
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["count"], 21)
+		self.assertEqual(len(response.data["results"]), 20)
+		self.assertIsNotNone(response.data["next"])
+		self.assertNotIn(foreign_project.pk, {item["project"]["id"] for item in response.data["results"]})
+		second_page = self.api.get("/api/market/conversations/?page=2")
+		self.assertEqual(len(second_page.data["results"]), 1)
+		self.assertNotIn(
+			second_page.data["results"][0]["project"]["id"],
+			{item["project"]["id"] for item in response.data["results"]},
+		)
+
+		self.api.force_authenticate(user=self.freelancer)
+		freelancer_response = self.api.get("/api/market/conversations/")
+		self.assertEqual(freelancer_response.data["count"], 21)
+		self.assertNotIn(foreign_project.pk, {item["project"]["id"] for item in freelancer_response.data["results"]})
+
+	def test_mark_all_read_updates_every_owned_project_and_no_foreign_messages(self):
+		projects = Project.objects.bulk_create([
+			Project(
+				title=f"Unread project {index}",
+				description="Unread fixture",
+				budget_min=100,
+				budget_max=200,
+				category="web",
+				client=self.client_user,
+				hired_freelancer=self.freelancer,
+				status="in_progress",
+			)
+			for index in range(21)
+		])
+		own_messages = ProjectMessage.objects.bulk_create([
+			ProjectMessage(project=project, sender=self.freelancer, message="Unread", read=False)
+			for project in projects
+		])
+		foreign_message = ProjectMessage.objects.create(
+			project=self.create_project(client=self.other_client),
+			sender=self.other_freelancer,
+			message="Foreign unread",
+			read=False,
+		)
+		self.api.force_authenticate(user=self.client_user)
+
+		response = self.api.post("/api/market/messages/mark-all-read/")
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["updated"], 21)
+		self.assertFalse(ProjectMessage.objects.filter(pk__in=[message.pk for message in own_messages], read=False).exists())
+		foreign_message.refresh_from_db()
+		self.assertFalse(foreign_message.read)
+		self.api.force_authenticate(user=self.freelancer)
+		self.assertEqual(self.api.post("/api/market/messages/mark-all-read/").status_code, 403)
+		self.api.force_authenticate(user=self.other_client)
+		other_client_response = self.api.post("/api/market/messages/mark-all-read/")
+		self.assertEqual(other_client_response.status_code, 200)
+		self.assertEqual(other_client_response.data["updated"], 1)
+		foreign_message.refresh_from_db()
+		self.assertTrue(foreign_message.read)
 
 	def test_public_project_response_omits_hired_freelancer_email(self):
 		self.project.hired_freelancer = self.freelancer
@@ -759,6 +871,31 @@ class MarketplaceHiringWorkflowTests(TestCase):
 		self.assertEqual(Proposal.objects.filter(project=self.project, status="accepted").count(), 1)
 		self.assertEqual(ActivityLog.objects.count(), activity_count)
 
+	def test_project_completion_rolls_back_when_activity_logging_fails(self):
+		self.project.status = "in_progress"
+		self.project.hired_freelancer = self.freelancer
+		self.project.save(update_fields=["status", "hired_freelancer"])
+		self.api.force_authenticate(user=self.client_user)
+		self.api.raise_request_exception = False
+		activity_count = ActivityLog.objects.count()
+		create_activity = ActivityLog.objects.create
+		calls = 0
+
+		def fail_second_activity(*args, **kwargs):
+			nonlocal calls
+			calls += 1
+			if calls == 2:
+				raise RuntimeError("activity failed")
+			return create_activity(*args, **kwargs)
+
+		with patch("marketplace.views.ActivityLog.objects.create", side_effect=fail_second_activity):
+			response = self.api.post(f"/api/market/projects/{self.project.id}/complete/")
+
+		self.assertEqual(response.status_code, 500)
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.status, "in_progress")
+		self.assertEqual(ActivityLog.objects.count(), activity_count)
+
 	def test_database_prevents_multiple_accepted_proposals_for_project(self):
 		self.proposal.status = "accepted"
 		self.proposal.save(update_fields=["status"])
@@ -782,6 +919,94 @@ class MarketplaceHiringWorkflowTests(TestCase):
 			ActivityLog.objects.filter(user=self.client_user, action__contains="Rejected proposal").count(),
 			1,
 		)
+
+
+@skipUnless(connection.features.has_select_for_update, "Requires database row-lock support")
+class MarketplaceProposalConcurrencyTests(TransactionTestCase):
+	reset_sequences = True
+
+	def setUp(self):
+		self.client_user = User.objects.create_user(email="race-client@test.com", password="pass", user_type="client")
+		self.freelancer = User.objects.create_user(email="race-freelancer@test.com", password="pass", user_type="freelancer")
+		self.project = Project.objects.create(
+			title="Concurrent project",
+			description="Race test",
+			budget_min=100,
+			budget_max=200,
+			category="web",
+			client=self.client_user,
+		)
+		self.proposal = Proposal.objects.create(
+			project=self.project,
+			freelancer=self.freelancer,
+			message="Original proposal",
+			bid_amount=150,
+		)
+
+	def run_race(self, competing_action):
+		barrier = Barrier(3)
+
+		def send_request(user, method, path, data=None):
+			close_old_connections()
+			try:
+				client = APIClient()
+				client.force_authenticate(user=user)
+				barrier.wait(timeout=10)
+				return getattr(client, method)(path, data or {}, format="json").status_code
+			finally:
+				close_old_connections()
+
+		with ThreadPoolExecutor(max_workers=2) as executor:
+			hire = executor.submit(
+				send_request,
+				self.client_user,
+				"post",
+				f"/api/market/proposals/{self.proposal.pk}/hire/",
+			)
+			mutation = executor.submit(*competing_action(send_request))
+			barrier.wait(timeout=10)
+			return hire.result(timeout=30), mutation.result(timeout=30)
+
+	def test_concurrent_hire_and_withdraw_leave_consistent_state(self):
+		hire_status, withdraw_status = self.run_race(lambda send: (
+			send,
+			self.freelancer,
+			"delete",
+			f"/api/market/proposals/{self.proposal.pk}/",
+		))
+		self.project.refresh_from_db()
+		proposal_exists = Proposal.objects.filter(pk=self.proposal.pk).exists()
+
+		if withdraw_status == 204:
+			self.assertEqual(hire_status, 404)
+			self.assertFalse(proposal_exists)
+			self.assertEqual(self.project.status, "open")
+			self.assertIsNone(self.project.hired_freelancer_id)
+		else:
+			self.assertEqual((hire_status, withdraw_status), (200, 400))
+			self.assertTrue(proposal_exists)
+			self.proposal.refresh_from_db()
+			self.assertEqual(self.proposal.status, "accepted")
+			self.assertEqual(self.project.status, "in_progress")
+			self.assertEqual(self.project.hired_freelancer_id, self.freelancer.pk)
+
+	def test_concurrent_hire_and_edit_never_changes_an_accepted_proposal(self):
+		hire_status, edit_status = self.run_race(lambda send: (
+			send,
+			self.freelancer,
+			"patch",
+			f"/api/market/proposals/{self.proposal.pk}/",
+			{"message": "Concurrent edit"},
+		))
+		self.proposal.refresh_from_db()
+		self.project.refresh_from_db()
+
+		self.assertEqual(hire_status, 200)
+		self.assertIn(edit_status, (200, 400))
+		self.assertEqual(self.proposal.status, "accepted")
+		self.assertIn(self.proposal.message, ("Original proposal", "Concurrent edit"))
+		self.assertEqual(self.project.status, "in_progress")
+		self.assertEqual(self.project.hired_freelancer_id, self.freelancer.pk)
 
 
 class MarketplaceRatingIntegrityTests(TestCase):
@@ -864,6 +1089,29 @@ class MarketplaceRatingIntegrityTests(TestCase):
 					to_user=self.freelancer,
 					rating=4,
 				)
+
+	def test_rating_list_from_user_filter_is_limited_to_the_authenticated_user(self):
+		own_rating = Rating.objects.create(
+			project=self.project,
+			from_user=self.client_user,
+			to_user=self.freelancer,
+			rating=5,
+		)
+		Rating.objects.create(
+			project=self.project,
+			from_user=self.freelancer,
+			to_user=self.client_user,
+			rating=4,
+		)
+		self.api.force_authenticate(user=self.client_user)
+
+		own_response = self.api.get(f"/api/market/ratings/?from_user={self.client_user.pk}")
+		other_response = self.api.get(f"/api/market/ratings/?from_user={self.freelancer.pk}")
+
+		self.assertEqual(own_response.status_code, 200)
+		self.assertEqual({item["id"] for item in own_response.data["results"]}, {own_rating.pk})
+		self.assertEqual(other_response.status_code, 200)
+		self.assertEqual(other_response.data["count"], 0)
 
 
 class UploadValidationTests(SimpleTestCase):
@@ -1015,6 +1263,34 @@ class MarketplacePrivateAttachmentTests(TestCase):
 		self.assertEqual(response.data["count"], 1)
 		self.assertEqual(response.data["results"][0]["id"], upload_response.data["id"])
 		self.assertIn(f"/api/market/messages/{upload_response.data['id']}/attachment/", response.data["results"][0]["attachment"])
+
+	def test_message_creation_ignores_client_controlled_read_and_sender_fields(self):
+		self.api.force_authenticate(user=self.freelancer)
+		response = self.api.post(
+			"/api/market/user_messages/create/",
+			{
+				"project": self.project.id,
+				"message": "Unread message",
+				"read": True,
+				"sender": self.outsider.id,
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 201)
+		message = ProjectMessage.objects.get(pk=response.data["id"])
+		self.assertEqual(message.sender, self.freelancer)
+		self.assertFalse(message.read)
+
+		self.api.force_authenticate(user=self.client_user)
+		read_response = self.api.post(f"/api/market/messages/{self.project.id}/mark-read/")
+		self.assertEqual(read_response.status_code, 200)
+		message.refresh_from_db()
+		self.assertTrue(message.read)
+
+		self.api.force_authenticate(user=self.outsider)
+		forbidden_response = self.api.post(f"/api/market/messages/{self.project.id}/mark-read/")
+		self.assertEqual(forbidden_response.status_code, 403)
 
 	def test_message_list_query_count_does_not_grow_with_message_count(self):
 		self.api.force_authenticate(user=self.client_user)

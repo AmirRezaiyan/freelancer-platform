@@ -1,18 +1,19 @@
-import React, { useEffect } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import AuthProvider, { AuthContext } from "./context/AuthContext";
+import AuthProvider from "./context/AuthContext";
+import { AuthContext } from "./context/auth-context";
 
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import Home from "./pages/Home";
-import Projects from "./pages/Projects";
-import ProjectDetails from "./pages/ProjectDetails";
-import ProjectCreate from "./pages/ProjectCreate";
-import Messages from "./pages/Messages";
-import Profile from "./pages/Profile";
-import ProjectEdit from "./pages/ProjectEdit";
-import Proposals from "./pages/Proposals";  
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Home = lazy(() => import("./pages/Home"));
+const Projects = lazy(() => import("./pages/Projects"));
+const ProjectDetails = lazy(() => import("./pages/ProjectDetails"));
+const ProjectCreate = lazy(() => import("./pages/ProjectCreate"));
+const Messages = lazy(() => import("./pages/Messages"));
+const Profile = lazy(() => import("./pages/Profile"));
+const ProjectEdit = lazy(() => import("./pages/ProjectEdit"));
+const Proposals = lazy(() => import("./pages/Proposals"));
 
 function RequireAuth({ children }) {
   const { user, loading } = React.useContext(AuthContext);
@@ -34,31 +35,33 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <LocationLogger />
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+        <Suspense fallback={<div role="status" style={{ color: "#fff", padding: 24 }}>در حال بارگذاری...</div>}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
 
-          <Route
-            path="/dashboard/*"
-            element={
-              <RequireAuth>
-                <Dashboard />
-              </RequireAuth>
-            }
-          >
-            <Route index element={<Home />} />
-            <Route path="projects" element={<Projects />} />
-            <Route path="projects/create" element={<ProjectCreate />} />
-            <Route path="projects/:id/edit" element={<ProjectEdit />} />
-            <Route path="projects/:id" element={<ProjectDetails />} />
-            <Route path="messages" element={<Messages />} />
-            <Route path="profile" element={<Profile />} />
-            <Route path="proposals" element={<Proposals />} />
-          </Route>
+            <Route
+              path="/dashboard/*"
+              element={
+                <RequireAuth>
+                  <Dashboard />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<Home />} />
+              <Route path="projects" element={<Projects />} />
+              <Route path="projects/create" element={<ProjectCreate />} />
+              <Route path="projects/:id/edit" element={<ProjectEdit />} />
+              <Route path="projects/:id" element={<ProjectDetails />} />
+              <Route path="messages" element={<Messages />} />
+              <Route path="profile" element={<Profile />} />
+              <Route path="proposals" element={<Proposals />} />
+            </Route>
 
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   );

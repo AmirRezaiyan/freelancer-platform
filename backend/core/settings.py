@@ -116,7 +116,7 @@ IS_PRODUCTION = os.getenv("DJANGO_ENV", "production" if not DEBUG else "developm
 RATE_LIMIT_CACHE_URL = SECURITY_SETTINGS["RATE_LIMIT_CACHE_URL"]
 PRIVATE_MEDIA_ROOT = SECURITY_SETTINGS["PRIVATE_MEDIA_ROOT"]
 
-if IS_PRODUCTION:
+if RATE_LIMIT_CACHE_URL:
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
@@ -124,6 +124,8 @@ if IS_PRODUCTION:
         }
     }
 else:
+    if IS_PRODUCTION:
+        raise ImproperlyConfigured("Production requires RATE_LIMIT_CACHE_URL pointing to shared Redis.")
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",

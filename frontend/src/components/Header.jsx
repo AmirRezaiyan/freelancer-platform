@@ -1,6 +1,6 @@
 import React, { useContext, useRef, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 import UserAvatar from "./UserAvatar";
 import SearchBox from "./SearchBox";
 import api from "../api/axios";
@@ -11,7 +11,6 @@ export default function Header({ onToggleSidebar }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
-  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const menuRef = useRef(null);
   const notifRef = useRef(null);
@@ -28,16 +27,7 @@ export default function Header({ onToggleSidebar }) {
 
 
   useEffect(() => {
-    loadUnreadMessages();
     loadNotifications(6);
-
-    function handleMessagesRead() {
-      setUnreadMessages(0);
-    }
-    window.addEventListener("messagesReadByEmployer", handleMessagesRead);
-    return () => {
-      window.removeEventListener("messagesReadByEmployer", handleMessagesRead);
-    };
   }, [user]);
 
   async function loadNotifications(limit = 6) {
@@ -51,17 +41,6 @@ export default function Header({ onToggleSidebar }) {
       setNotifications([]);
     } finally {
       setNotifLoading(false);
-    }
-  }
-
-  async function loadUnreadMessages() {
-    try {
-      const res = await api.get("/market/messages/unread/", { withCredentials: true });
-      const count = res.data?.unread ?? res.data?.count ?? 0;
-      setUnreadMessages(count);
-    } catch (err) {
-      console.warn("load unread messages error", err);
-      setUnreadMessages(0);
     }
   }
 

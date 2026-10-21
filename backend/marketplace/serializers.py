@@ -30,20 +30,6 @@ class ProjectBudgetValidationMixin:
         return attrs
 
 
-class ProjectSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Project
-        fields = "__all__"
-        read_only_fields = ["client", "created_at", "status"]
-
-
-class ProposalSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Proposal
-        fields = "__all__"
-        read_only_fields = ["freelancer", "created_at"]
-
-
 class ProposalUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Proposal
@@ -76,8 +62,20 @@ class ProjectMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProjectMessage
-        fields = "__all__"
-        read_only_fields = ["sender", "created_at"]
+        fields = [
+            "id",
+            "project",
+            "sender",
+            "message",
+            "attachment",
+            "sticker",
+            "created_at",
+            "read",
+            "attachment_url",
+            "attachment_name",
+            "attachment_type",
+        ]
+        read_only_fields = ["id", "sender", "created_at", "read"]
 
     def get_attachment_url(self, obj):
         if not obj.attachment:
@@ -105,18 +103,6 @@ class ProjectMessageSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(str(exc)) from None
         return value
         
-class ProjectCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Project
-        fields = ('title', 'description', 'budget_min', 'budget_max', 'skills', 'category')
-
-    def create(self, validated_data):
-        request = self.context.get('request', None)
-        if request and hasattr(request, "user"):
-            validated_data["client"] = request.user
-        return super().create(validated_data)
-
-
 class ProposalCreateSerializer(serializers.ModelSerializer):
     project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), required=False)
     bid = serializers.IntegerField(required=False, min_value=1, write_only=True)
@@ -274,6 +260,39 @@ class ActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = ActivityLog
         fields = "__all__"
+
+
+class ConversationProjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = [
+            "id",
+            "title",
+            "description",
+            "budget_min",
+            "budget_max",
+            "category",
+            "skills",
+            "client",
+            "hired_freelancer",
+            "status",
+            "created_at",
+        ]
+
+
+class ConversationSerializer(serializers.ModelSerializer):
+    project = ConversationProjectSerializer(read_only=True, source="*")
+    last_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Project
+        fields = ["project", "last_message"]
+
+    def get_last_message(self, obj):
+        messages = getattr(obj, "latest_messages", ())
+        if not messages:
+            return None
+        return ProjectMessageSerializer(messages[0], context=self.context).data
         
         
 class RatingSerializer(serializers.ModelSerializer):

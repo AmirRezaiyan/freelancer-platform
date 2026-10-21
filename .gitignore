@@ -12,12 +12,16 @@ ENV/
 *.log
 db.sqlite3
 db.sqlite3-journal
+*.sqlite3
+*.sqlite3-journal
 
 .env
 .env.*
 !.env.example
 
 media/
+private_media/
+uploads/
 staticfiles/
 
 

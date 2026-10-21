@@ -1,8 +1,10 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, Outlet, useLocation } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+import { AuthContext } from "../context/auth-context";
 import UserAvatar from "../components/UserAvatar";
 import api from "../api/axios";
+import fetchAllPages from "../utils/fetchAllPages";
+import { markAllProjectMessagesRead } from "../api/messageState";
 
 export default function Dashboard() {
   const { user, loading, logout } = useContext(AuthContext);
@@ -436,8 +438,7 @@ function DashboardHome({ user }) {
     proposals: { total: 0, pending: 0, accepted: 0, rejected: 0 },
     messages: 0,
     projects: { total: 0, active: 0, completed: 0 },
-    recentActivities: [],
-    portfolios: []
+    recentActivities: []
   });
   const [loading, setLoading] = useState(true);
 
@@ -468,8 +469,7 @@ function DashboardHome({ user }) {
           api.get("/market/proposals/stats/").catch(() => null),
           api.get("/market/messages/unread/").catch(() => null),
           api.get("/market/projects/my-stats/").catch(() => null),
-          api.get("/market/activities/recent/?limit=5").catch(() => null),
-          api.get("/market/portfolio/?limit=6").catch(() => null)
+          api.get("/market/activities/recent/?limit=5").catch(() => null)
         ];
         const results = await Promise.allSettled(requests);
 
@@ -478,8 +478,7 @@ function DashboardHome({ user }) {
           proposals: { total: 0, pending: 0, accepted: 0, rejected: 0 },
           messages: 0,
           projects: { total: 0, active: 0, completed: 0 },
-          recentActivities: [],
-          portfolios: []
+          recentActivities: []
         };
 
         if (results[0].status === "fulfilled" && results[0].value?.data) {
@@ -515,11 +514,6 @@ function DashboardHome({ user }) {
           newStats.recentActivities = d?.results ?? d?.activities ?? d ?? [];
         }
 
-        if (results[5].status === "fulfilled" && results[5].value?.data) {
-          const d = results[5].value.data;
-          newStats.portfolios = d?.results ?? d?.portfolios ?? d ?? [];
-        }
-
         if (!cancelled) {
           setStats(newStats);
           loadPortfolios();
@@ -540,35 +534,20 @@ function DashboardHome({ user }) {
       markAllProjectMessagesAsRead().then(() => {
         window.dispatchEvent(new CustomEvent("messagesReadByEmployer"));
         setStats(prev => ({ ...prev, messages: 0 }));
+      }).catch((err) => {
+        console.error("Error marking all project messages as read:", err);
       });
     }
   }, [location.pathname, stats.messages]);
 
   async function markAllProjectMessagesAsRead() {
-    try {
-      const res = await api.get("/market/projects/", { withCredentials: true });
-      const projects = Array.isArray(res.data) ? res.data : (res.data?.results || res.data || []);
-      const clientId = user?.user?.id || user?.id;
-      const myProjects = projects.filter(p => {
-        if (!p) return false;
-        if (typeof p.client === "number") return Number(p.client) === Number(clientId);
-        if (typeof p.client === "object") return (p.client.id ?? p.client.pk) === clientId;
-        return false;
-      });
-      await Promise.all(myProjects.map(p =>
-        api.post(`/market/messages/${p.id}/mark-read/`, {}, { withCredentials: true })
-      ));
-      setStats(prev => ({ ...prev, messages: 0 }));
-    } catch (err) {
-      console.error("Error marking all project messages as read:", err);
-    }
+    return markAllProjectMessagesRead(api);
   }
 
   async function loadPortfolios() {
     try {
       setPortLoading(true);
-      const res = await api.get("/market/portfolio/", { withCredentials: true });
-      const data = Array.isArray(res.data) ? res.data : res.data?.results ?? res.data?.portfolios ?? [];
+      const data = await fetchAllPages("/market/portfolio/");
       setPortfolios(data);
     } catch (err) {
       console.error("load portfolios error", err);
@@ -668,7 +647,7 @@ function DashboardHome({ user }) {
       if (csrftoken) headers["X-CSRFToken"] = csrftoken;
       await api.delete(`/market/portfolio/${id}/`, { headers, withCredentials: true });
       setPortfolios(prev => prev.filter(p => p.id !== id));
-    } catch (err) {
+    } catch {
       alert("خطا در حذف");
     } finally {
       setDeletingId(null);
@@ -690,7 +669,6 @@ function DashboardHome({ user }) {
   const formatNumber = (num) => num?.toLocaleString('fa-IR') || '۰';
   const completion = computeCompletion(normalizedUser);
 
-  const openProjects = stats.projects.active;
   const inProgressProjects = stats.projects.active;
   const completedProjects = stats.projects.completed;
 

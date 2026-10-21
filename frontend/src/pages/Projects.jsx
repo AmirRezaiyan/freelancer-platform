@@ -1,14 +1,12 @@
 import React, { useEffect, useState, useContext, useMemo } from "react";
 import api from "../api/axios";
-import { Link, useNavigate, useLocation } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+import { Link } from "react-router-dom";
+import { AuthContext } from "../context/auth-context";
 import { formatCurrencyToToman, formatDateIran } from "../utils/formatters";
+import fetchAllPages from "../utils/fetchAllPages";
 
 export default function Projects() {
   const { user } = useContext(AuthContext);
-  const navigate = useNavigate();
-  const location = useLocation();
-
   const [projects, setProjects] = useState([]);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -41,6 +39,12 @@ export default function Projects() {
   }, []);
 
   useEffect(() => {
+    setPage(1);
+    setProjects([]);
+    setUserRatings({});
+  }, [user?.id]);
+
+  useEffect(() => {
     let mounted = true;
     const load = async () => {
       setLoading(true);
@@ -60,12 +64,7 @@ export default function Projects() {
 
         if (user) {
           try {
-            const ratingsRes = await api.get("/market/ratings/", {
-              params: { from_user: user.id }
-            });
-            const ratingsData = Array.isArray(ratingsRes.data) 
-              ? ratingsRes.data 
-              : ratingsRes.data.results || [];
+            const ratingsData = await fetchAllPages("/market/ratings/", { from_user: user.id });
             
             const ratingsMap = {};
             ratingsData.forEach((rating) => {
@@ -480,7 +479,7 @@ export default function Projects() {
               <input type="text" placeholder="جستجو در پروژه‌ها، مهارت‌ها..." value={query} onChange={(e) => setQuery(e.target.value)} style={styles.searchInput} />
             </div>
             {(query || skillFilter || showOnlyMine || statusFilter) && (
-              <button onClick={() => { setQuery(""); setSkillFilter(""); setShowOnlyMine(false); setStatusFilter(""); }} style={styles.clearBtn}>پاک کردن فیلترها</button>
+              <button onClick={() => { setPage(1); setProjects([]); setQuery(""); setSkillFilter(""); setShowOnlyMine(false); setStatusFilter(""); }} style={styles.clearBtn}>پاک کردن فیلترها</button>
             )}
           </div>
 

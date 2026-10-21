@@ -1,0 +1,22 @@
+[dir="rtl"] .dropdown-menu-end {
+  left: 0 !important;
+  right: auto !important;
+}
+
+[dir="rtl"] .dropdown-menu {
+  left: auto;
+  right: 0;
+  text-align: right;
+}
+
+[dir="rtl"] input,
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+  direction: rtl;
+}
+
+[dir="ltr"] input,
+[dir="ltr"] textarea,
+[dir="ltr"] select {
+  direction: ltr;
+}

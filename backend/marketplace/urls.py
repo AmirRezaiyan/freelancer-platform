@@ -15,6 +15,7 @@ from .views import (
     ProposalListView,
     ProjectMessageCreateView,
     ProjectMessageListView,
+    ConversationListView,
     PortfolioDetailView,
     PortfolioListCreateView,
     hire_proposal_view,
@@ -23,6 +24,7 @@ from .views import (
     RatingListView,
     UserRatingsView,
     mark_project_messages_read,
+    mark_all_project_messages_read,
     dashboard_view
 )
 
@@ -35,6 +37,7 @@ urlpatterns = [
     path("projects/<int:project_id>/proposals/", ProposalListView.as_view()),
     path("proposals/create/", ProposalCreateView.as_view()),
     path("projects/<int:project_id>/user_messages/", ProjectMessageListView.as_view()),
+    path("conversations/", ConversationListView.as_view(), name="conversation-list"),
     path("messages/<int:message_id>/attachment/", views.message_attachment_view, name="message-attachment"),
     path("user_messages/create/", ProjectMessageCreateView.as_view()),
     path("proposals/", views.proposal_create_view, name="proposal-create"),
@@ -62,5 +65,6 @@ urlpatterns = [
     path("proposals/stats/", views.proposal_stats_view, name="proposal-stats"),
     path("projects/stats/", views.project_stats_view, name="project-stats"),
     path("messages/<int:project_id>/mark-read/", mark_project_messages_read, name="mark-project-messages-read"),
+    path("messages/mark-all-read/", mark_all_project_messages_read, name="mark-all-project-messages-read"),
 
 ]

@@ -143,14 +143,15 @@ button:focus-visible {
     padding: 15px;
   }
 }
+/* End of responsive overrides. */
 
-[dir="rtl"] .dropdown-menu-end {
-  left: 0 !important;
-  right: auto !important;
-}
-
-[dir="rtl"] .dropdown-menu {
-  text-align: right;
-  left: auto;
-  right: 0;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

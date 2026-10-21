@@ -1,15 +1,7 @@
-import React, { createContext, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import api from "../api/axios";
 import AuthAPI from "../api/auth";
-
-export const AuthContext = createContext({
-  user: null,
-  loading: true,
-  logout: () => {},
-  setUser: () => {},
-  login: async () => {},
-  register: async () => {},
-});
+import { AuthContext } from "./auth-context";
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);

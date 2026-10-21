@@ -1,12 +1,9 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
-import { AuthContext } from "../context/AuthContext";
 
 export default function ProjectCreate() {
   const navigate = useNavigate();
-  const { user } = useContext(AuthContext);
-
   const [form, setForm] = useState({
     title: "",
     description: "",

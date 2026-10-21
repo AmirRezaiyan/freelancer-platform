@@ -1,11 +1,11 @@
 from rest_framework import generics, permissions
 from .models import Project, Proposal, ProjectMessage , Portfolio , Project, ActivityLog , Rating , Wallet
-from .serializers import ProjectSerializer, ProposalSerializer, ProposalUpdateSerializer, ProjectMessageSerializer , ProjectCreateSerializer , ProposalCreateSerializer , ProposalSerializer , PortfolioSerializer, RatingSerializer, RatingCreateSerializer
+from .serializers import ConversationSerializer, ProjectSerializer, ProposalSerializer, ProposalUpdateSerializer, ProjectMessageSerializer , ProjectCreateSerializer , ProposalCreateSerializer , ProposalSerializer , PortfolioSerializer, RatingSerializer, RatingCreateSerializer
 from .permissions import IsClient, IsOwner
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 from rest_framework import generics, permissions
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Exists, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Subquery, Sum
 from django.conf import settings
 from django.core.files import File
 from rest_framework.response import Response
@@ -25,6 +25,30 @@ import logging
 
 
 logger = logging.getLogger(__name__)
+
+
+def create_proposal_with_project_lock(serializer, user):
+    validated_project = serializer.validated_data["project"]
+    with transaction.atomic():
+        try:
+            project = Project.objects.select_for_update().get(pk=validated_project.pk)
+        except Project.DoesNotExist:
+            raise ValidationError({"project": "This project is no longer available."}) from None
+
+        if project.status != "open":
+            raise ValidationError({"project": "Proposals are only allowed for open projects."})
+        if project.client_id == user.pk:
+            raise ValidationError({"project": "You cannot propose on your own project."})
+
+        bid_amount = serializer.validated_data["bid_amount"]
+        if project.budget_min is not None and bid_amount < project.budget_min:
+            raise ValidationError({"bid_amount": "Bid is below the project minimum budget."})
+        if project.budget_max is not None and bid_amount > project.budget_max:
+            raise ValidationError({"bid_amount": "Bid exceeds the project maximum budget."})
+        if Proposal.objects.filter(project=project, freelancer=user).exists():
+            raise ValidationError({"project": "You have already submitted a proposal for this project."})
+
+        return serializer.save(project=project, freelancer=user)
 
 
 def log_proposal_creation_failure(exc):
@@ -129,19 +153,19 @@ def reject_proposal_view(request, proposal_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def project_mark_completed_view(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
+    with transaction.atomic():
+        project = get_object_or_404(Project.objects.select_for_update(), pk=project_id)
+        if project.client_id != request.user.pk:
+            return Response({"detail": "فقط کارفرما می‌تواند پروژه را تکمیل کند."}, status=status.HTTP_403_FORBIDDEN)
 
-    if project.client != request.user:
-        return Response({"detail": "فقط کارفرما می‌تواند پروژه را تکمیل کند."}, status=status.HTTP_403_FORBIDDEN)
+        if project.status != "in_progress":
+            return Response({"detail": "پروژه در وضعیت مناسب (in_progress) نیست."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if project.status != "in_progress":
-        return Response({"detail": "پروژه در وضعیت مناسب (in_progress) نیست."}, status=status.HTTP_400_BAD_REQUEST)
-
-    project.status = "completed"
-    project.save()
-    if project.hired_freelancer:
-        ActivityLog.objects.create(user=project.hired_freelancer, action=f"Project completed: {project.title}")
-    ActivityLog.objects.create(user=request.user, action=f"Marked project completed: {project.title}")
+        project.status = "completed"
+        project.save(update_fields=["status"])
+        if project.hired_freelancer_id:
+            ActivityLog.objects.create(user_id=project.hired_freelancer_id, action=f"Project completed: {project.title}")
+        ActivityLog.objects.create(user=request.user, action=f"Marked project completed: {project.title}")
 
     return Response({"detail": "پروژه به عنوان تکمیل شده علامت‌گذاری شد."})
 
@@ -154,13 +178,14 @@ def proposal_create_view(request):
     serializer.is_valid(raise_exception=True)
 
     try:
-        with transaction.atomic():
-            proposal = serializer.save()
+        proposal = create_proposal_with_project_lock(serializer, request.user)
     except IntegrityError:
         return Response(
             {"detail": "You have already submitted a proposal for this project."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    except ValidationError:
+        raise
     except Exception as exc:
         log_proposal_creation_failure(exc)
         return Response(
@@ -260,10 +285,11 @@ class ProposalCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = self.request.user
         try:
-            with transaction.atomic():
-                serializer.save(freelancer=user)
+            create_proposal_with_project_lock(serializer, user)
         except IntegrityError:
             raise ValidationError({"project": "You have already submitted a proposal for this project."}) from None
+        except ValidationError:
+            raise
         except Exception as exc:
             log_proposal_creation_failure(exc)
             raise APIException("Unable to create proposal.") from None
@@ -300,15 +326,41 @@ class ProposalDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Proposal.objects.filter(freelancer=self.request.user)
 
-    def perform_update(self, serializer):
-        if serializer.instance.status != "pending":
-            raise PermissionDenied("Only pending proposals can be edited.")
-        serializer.save()
+    def _get_locked_pending_proposal(self, proposal_id):
+        project_id = Proposal.objects.filter(
+            pk=proposal_id,
+            freelancer_id=self.request.user.pk,
+        ).values_list("project_id", flat=True).first()
+        if project_id is None:
+            raise Http404
 
-    def perform_destroy(self, instance):
-        if instance.status != "pending":
-            raise PermissionDenied("Only pending proposals can be withdrawn.")
-        instance.delete()
+        project = get_object_or_404(Project.objects.select_for_update(), pk=project_id)
+        proposal = get_object_or_404(
+            Proposal.objects.select_for_update().select_related("project"),
+            pk=proposal_id,
+            project_id=project.pk,
+            freelancer_id=self.request.user.pk,
+        )
+        if project.status != "open":
+            raise ValidationError({"project": "Only proposals for open projects can be changed."})
+        if proposal.status != "pending":
+            raise PermissionDenied("Only pending proposals can be changed.")
+        return proposal
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        with transaction.atomic():
+            instance = self._get_locked_pending_proposal(kwargs["pk"])
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        with transaction.atomic():
+            instance = self._get_locked_pending_proposal(kwargs["pk"])
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
 
 class ProjectMessageCreateView(generics.CreateAPIView):
     serializer_class = ProjectMessageSerializer
@@ -338,6 +390,23 @@ class ProjectMessageListView(generics.ListAPIView):
         if user.pk not in (project.client_id, project.hired_freelancer_id):
             raise Http404
         return ProjectMessage.objects.filter(project=project).order_by("-created_at", "-pk")
+
+
+class ConversationListView(generics.ListAPIView):
+    serializer_class = ConversationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        latest_messages = ProjectMessage.objects.order_by("-created_at", "-pk")[:1]
+        projects = Project.objects.prefetch_related(
+            Prefetch("messages", queryset=latest_messages, to_attr="latest_messages")
+        ).order_by("-created_at", "-pk")
+        if user.user_type == "client":
+            return projects.filter(client_id=user.pk, hired_freelancer__isnull=False)
+        if user.user_type == "freelancer":
+            return projects.filter(hired_freelancer_id=user.pk)
+        return projects.none()
 
 
 @api_view(["GET"])
@@ -436,9 +505,15 @@ class RatingListView(generics.ListAPIView):
 
     def get_queryset(self):
         user_to_id = self.request.query_params.get('user_to')
+        from_user_id = self.request.query_params.get("from_user")
+        queryset = Rating.objects.all()
+        if from_user_id:
+            if str(self.request.user.pk) != from_user_id:
+                return queryset.none()
+            queryset = queryset.filter(from_user_id=self.request.user.pk)
         if user_to_id:
-            return Rating.objects.filter(to_user_id=user_to_id).order_by("-created_at", "-pk")
-        return Rating.objects.all().order_by("-created_at", "-pk")
+            queryset = queryset.filter(to_user_id=user_to_id)
+        return queryset.order_by("-created_at", "-pk")
     
     
 class UserRatingsView(generics.ListAPIView):
@@ -487,8 +562,8 @@ def project_stats_view(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def mark_project_messages_read(request, project_id):
-    project = Project.objects.get(pk=project_id)
-    if project.client != request.user:
+    project = get_object_or_404(Project, pk=project_id)
+    if project.client_id != request.user.pk:
         return Response({"detail": "دسترسی غیرمجاز"}, status=403)
     updated = ProjectMessage.objects.filter(
         project=project,
@@ -499,13 +574,12 @@ def mark_project_messages_read(request, project_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def mark_project_messages_read(request, project_id):
-    project = Project.objects.get(pk=project_id)
-    if project.client != request.user:
-        return Response({"detail": "دسترسی غیرمجاز"}, status=403)
+def mark_all_project_messages_read(request):
+    if request.user.user_type != "client":
+        return Response({"detail": "Only clients can mark project messages as read."}, status=status.HTTP_403_FORBIDDEN)
     updated = ProjectMessage.objects.filter(
-        project=project,
+        project__client_id=request.user.pk,
         sender__user_type="freelancer",
-        read=False
+        read=False,
     ).update(read=True)
     return Response({"updated": updated})

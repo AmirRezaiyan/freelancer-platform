@@ -1,44 +1,39 @@
 @font-face {
-  font-family: 'IRANSans-web';
-  src: url('src/assets/fonts/IRANSans-Bold-web.eot');
-  src: url('src/assets/fonts/IRANSans-Bold-web.eot?#iefix') format('eot'), 
-  url('src/assets/fonts/IRANSans-Bold-web.woff') format('woff'), 
-  url('src/assets/fonts/IRANSans-Bold-web.ttf') format('ttf');
-  font-weight: bold;
+  font-family: "IRANSans-web";
+  src: url("../assets/fonts/IRANSans-Bold-web.woff") format("woff");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
 }
 
 @font-face {
-  font-family: 'IRANSans-web';
-  src: url('src/assets/fonts/IRANSans-Medium-web.eot');
-  src: url('src/assets/fonts/IRANSans-Medium-web.eot?#iefix') format('eot'), 
-  url('src/assets/fonts/IRANSans-Medium-web.woff') format('woff'), 
-  url('src/assets/fonts/IRANSans-Medium-web.ttf') format('ttf');
+  font-family: "IRANSans-web";
+  src: url("../assets/fonts/IRANSans-Medium-web.woff") format("woff");
+  font-style: normal;
   font-weight: 500;
+  font-display: swap;
 }
 
 @font-face {
-  font-family: 'IRANSans-web';
-  src: url('src/assets/fonts/IRANSans-UltraLight-web.eot');
-  src: url('src/assets/fonts/IRANSans-UltraLight-web.eot?#iefix') format('eot'), 
-  url('src/assets/fonts/IRANSans-UltraLight-web.woff') format('woff'), 
-  url('src/assets/fonts/IRANSans-UltraLight-web.ttf') format('ttf');
+  font-family: "IRANSans-web";
+  src: url("../assets/fonts/IRANSans-UltraLight-web.woff") format("woff");
+  font-style: normal;
   font-weight: 200;
+  font-display: swap;
 }
 
 @font-face {
-  font-family: 'IRANSans-web';
-  src: url('src/assets/fonts/IRANSans-Light-web.eot');
-  src: url('src/assets/fonts/IRANSans-Light-web.eot?#iefix') format('eot'), 
-  url('src/assets/fonts/IRANSans-Light-web.woff') format('woff'), 
-  url('src/assets/fonts/IRANSans-Light-web.ttf') format('ttf');
+  font-family: "IRANSans-web";
+  src: url("../assets/fonts/IRANSans-Light-web.woff") format("woff");
+  font-style: normal;
   font-weight: 300;
+  font-display: swap;
 }
 
 @font-face {
-  font-family: 'IRANSans-web';
-  src: url('src/assets/fonts/IRANSans-web.eot');
-  src: url('src/assets/fonts/IRANSans-web.eot?#iefix') format('eot'), 
-  url('src/assets/fonts/IRANSans-web.woff') format('woff'), 
-  url('src/assets/fonts/IRANSans-web.ttf') format('ttf');
+  font-family: "IRANSans-web";
+  src: url("../assets/fonts/IRANSans-web.woff") format("woff");
+  font-style: normal;
   font-weight: normal;
+  font-display: swap;
 }
