@@ -2,10 +2,10 @@ from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 
 from .models import Wallet, Proposal, ProjectMessage, Portfolio, Project, ActivityLog
-from .serializers import PortfolioSerializer, ActivitySerializer
+from .serializers import ActivitySerializer, PortfolioSerializer, ProjectSerializer
 
 
 class WalletBalanceView(APIView):
@@ -57,6 +57,28 @@ class ProjectStatsView(APIView):
             completed=Count("id", filter=Q(status="completed")),
         )
         return Response(counts)
+
+
+class EmployerProjectsView(ListAPIView):
+    serializer_class = ProjectSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        user_proposals = Proposal.objects.filter(project_id=OuterRef("pk"), freelancer_id=user.pk)
+        queryset = Project.objects.filter(client=user).select_related(
+            "client", "hired_freelancer"
+        ).annotate(
+            has_applied=Exists(user_proposals),
+            user_proposal_id=Subquery(user_proposals.values("pk")[:1]),
+        )
+        status_filter = self.request.query_params.get("status")
+        search_term = self.request.query_params.get("q")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if search_term:
+            queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term))
+        return queryset.order_by("-created_at", "-pk")
 
 
 class PortfolioLimitedView(ListAPIView):

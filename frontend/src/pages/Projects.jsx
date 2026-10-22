@@ -14,11 +14,12 @@ export default function Projects() {
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [skillFilter, setSkillFilter] = useState("");
-  const [showOnlyMine, setShowOnlyMine] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -36,6 +37,7 @@ export default function Projects() {
   const [ratingModalTitle, setRatingModalTitle] = useState("ثبت امتیاز");
   const [userRatings, setUserRatings] = useState({}); // { "12:34": true, "0:34": true }
   const [isNarrow, setIsNarrow] = useState(typeof window !== "undefined" ? window.innerWidth <= 1024 : false);
+  const isClient = user?.user_type === "client";
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -60,14 +62,17 @@ export default function Projects() {
     const controller = new AbortController();
     const load = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const params = {};
         if (statusFilter) params.status = statusFilter;
         if (debouncedQuery) params.q = debouncedQuery;
         params.page = page;
-        const res = await api.get("/market/projects/", { params, signal: controller.signal });
+        const endpoint = isClient ? "/market/projects/mine/" : "/market/projects/";
+        const res = await api.get(endpoint, { params, signal: controller.signal });
         if (!mounted) return;
-        const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+        const data = Array.isArray(res.data) ? res.data : res.data?.results;
+        if (!Array.isArray(data)) throw new Error("Invalid project response");
         setHasNextPage(Boolean(res.data?.next));
         const normalized = data.map((p) => ({
           ...p,
@@ -103,9 +108,9 @@ export default function Projects() {
             console.error("Error loading user ratings:", err?.response?.status);
           }
         }
-      } catch (err) {
+      } catch {
         if (!mounted || controller.signal.aborted) return;
-        console.error("load projects error", err?.response?.status);
+        setLoadError("بارگذاری پروژه‌ها انجام نشد. اتصال و دسترسی خود را بررسی و دوباره تلاش کنید.");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -115,7 +120,7 @@ export default function Projects() {
       mounted = false;
       controller.abort();
     };
-  }, [userId, statusFilter, page, debouncedQuery]);
+  }, [userId, statusFilter, page, debouncedQuery, isClient, loadAttempt]);
 
   const skillsList = useMemo(() => {
     const s = new Set();
@@ -131,10 +136,6 @@ export default function Projects() {
     const q = (query || "").trim().toLowerCase();
     return projects.filter((p) => {
       if (!p) return false;
-      if (showOnlyMine) {
-        const clientId = typeof p.client === "number" ? p.client : p.client?.id;
-        if (clientId !== user?.id) return false;
-      }
       if (skillFilter) {
         const skills = Array.isArray(p.skills) ? p.skills : (p.skills || "").toString().split(",").map(x => x.trim());
         if (!skills.map(x => (x || "").toLowerCase()).includes(skillFilter.toLowerCase())) return false;
@@ -144,7 +145,7 @@ export default function Projects() {
       const hay = `${p.title || ""} ${p.description || ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [projects, query, skillFilter, showOnlyMine, user, statusFilter]);
+  }, [projects, query, skillFilter, statusFilter]);
 
   function getCookie(name) {
     if (typeof document === "undefined") return null;
@@ -359,6 +360,7 @@ export default function Projects() {
       case "open": return "باز";
       case "in_progress": return "در حال انجام";
       case "completed": return "تکمیل‌شده";
+      case "cancelled": return "لغوشده";
       default: return status;
     }
   };
@@ -387,6 +389,8 @@ export default function Projects() {
       return <div style={{ ...base, background: "#f97316", marginInlineStart: 12 }}>در حال انجام</div>;
     } else if (status === "completed") {
       return <div style={{ ...base, background: "#6b7280", marginInlineStart: 12 }}>تمام شده</div>;
+    } else if (status === "cancelled") {
+      return <div style={{ ...base, background: "#a9362b", marginInlineStart: 12 }}>لغوشده</div>;
     }
     return null;
   };
@@ -399,15 +403,16 @@ export default function Projects() {
         <div className="projects-hero-content" style={styles.heroContent}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
             <div>
-              <h1 style={styles.heroTitle}>
-                <span style={styles.titleIcon}>🚀</span>
+              <h1 className="projects-page-title" style={styles.heroTitle}>
                 <span style={styles.titleGradient}>پروژه‌ها</span>
               </h1>
-              <p style={styles.heroSubtitle}>پروژه‌ها را بررسی و بر اساس وضعیت یا مهارت فیلتر کنید.</p>
+              <p style={styles.heroSubtitle}>{isClient
+                ? "پروژه‌های خود را مدیریت و بر اساس وضعیت یا مهارت فیلتر کنید."
+                : "پروژه‌های باز را بررسی و بر اساس وضعیت یا مهارت فیلتر کنید."}</p>
             </div>
 
             {user?.user_type === "client" && (
-              <Link to="/dashboard/projects/create" style={styles.createBtn}>
+              <Link className="projects-create-action" to="/dashboard/projects/create" style={styles.createBtn}>
                 ساخت پروژه
               </Link>
             )}
@@ -448,21 +453,12 @@ export default function Projects() {
             <div style={styles.filterCard}>
               <h3 style={styles.filterTitle}>فیلترها</h3>
 
-              {user?.user_type === "client" && (
-                <div style={styles.filterSection}>
-                  <label style={styles.checkboxLabel}>
-                    <input type="checkbox" checked={showOnlyMine} onChange={(e) => setShowOnlyMine(e.target.checked)} style={styles.checkbox} />
-                    نمایش فقط پروژه‌های من
-                  </label>
-                </div>
-              )}
-
               <div style={styles.filterSection}>
                 <h4 style={styles.filterSectionTitle}>مهارت‌ها</h4>
                 <div style={styles.skillsFilter}>
-                  <button onClick={() => setSkillFilter("")} style={{ ...styles.skillFilterChip, background: !skillFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: !skillFilter ? "#fff" : "#94a3b8" }}>همه</button>
+                  <button className="projects-filter-chip" aria-pressed={!skillFilter} onClick={() => setSkillFilter("")} style={{ ...styles.skillFilterChip, background: !skillFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: !skillFilter ? "#fff" : "#94a3b8" }}>همه</button>
                   {skillsList.map((sk) => (
-                    <button key={sk} onClick={() => setSkillFilter(sk === skillFilter ? "" : sk)} style={{ ...styles.skillFilterChip, background: sk === skillFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: sk === skillFilter ? "#fff" : "#94a3b8" }}>{sk}</button>
+                    <button className="projects-filter-chip" key={sk} aria-pressed={sk === skillFilter} onClick={() => setSkillFilter(sk === skillFilter ? "" : sk)} style={{ ...styles.skillFilterChip, background: sk === skillFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: sk === skillFilter ? "#fff" : "#94a3b8" }}>{sk}</button>
                   ))}
                 </div>
               </div>
@@ -470,10 +466,11 @@ export default function Projects() {
               <div style={styles.filterSection}>
                 <h4 style={styles.filterSectionTitle}>وضعیت پروژه</h4>
                 <div style={styles.skillsFilter}>
-                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter(""); }} style={{ ...styles.skillFilterChip, background: !statusFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: !statusFilter ? "#fff" : "#94a3b8" }}>همه</button>
-                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter("open"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "open" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "open" ? "#fff" : "#94a3b8" }}>باز</button>
-                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter("in_progress"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "in_progress" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "in_progress" ? "#fff" : "#94a3b8" }}>در حال انجام</button>
-                  <button onClick={() => { setPage(1); setProjects([]); setStatusFilter("completed"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "completed" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "completed" ? "#fff" : "#94a3b8" }}>تمام شده</button>
+                  <button className="projects-filter-chip" aria-pressed={!statusFilter} onClick={() => { setPage(1); setProjects([]); setStatusFilter(""); }} style={{ ...styles.skillFilterChip, background: !statusFilter ? "#3b82f6" : "rgba(255,255,255,0.05)", color: !statusFilter ? "#fff" : "#94a3b8" }}>همه</button>
+                  <button className="projects-filter-chip" aria-pressed={statusFilter === "open"} onClick={() => { setPage(1); setProjects([]); setStatusFilter("open"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "open" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "open" ? "#fff" : "#94a3b8" }}>باز</button>
+                  <button className="projects-filter-chip" aria-pressed={statusFilter === "in_progress"} onClick={() => { setPage(1); setProjects([]); setStatusFilter("in_progress"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "in_progress" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "in_progress" ? "#fff" : "#94a3b8" }}>در حال انجام</button>
+                  <button className="projects-filter-chip" aria-pressed={statusFilter === "completed"} onClick={() => { setPage(1); setProjects([]); setStatusFilter("completed"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "completed" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "completed" ? "#fff" : "#94a3b8" }}>تمام شده</button>
+                  <button className="projects-filter-chip" aria-pressed={statusFilter === "cancelled"} onClick={() => { setPage(1); setProjects([]); setStatusFilter("cancelled"); }} style={{ ...styles.skillFilterChip, background: statusFilter === "cancelled" ? "#3b82f6" : "rgba(255,255,255,0.05)", color: statusFilter === "cancelled" ? "#fff" : "#94a3b8" }}>لغوشده</button>
                 </div>
               </div>
             </div>
@@ -484,10 +481,10 @@ export default function Projects() {
           <div style={styles.searchBar}>
             <div style={styles.searchWrapper}>
               <span style={styles.searchIcon}>🔍</span>
-              <input type="search" placeholder="جستجو در عنوان و توضیحات پروژه..." value={query} onChange={(e) => setQuery(e.target.value)} style={styles.searchInput} />
+              <input className="projects-search-input" type="search" placeholder="جستجو در عنوان و توضیحات پروژه..." value={query} onChange={(e) => setQuery(e.target.value)} style={styles.searchInput} />
             </div>
-            {(query || skillFilter || showOnlyMine || statusFilter) && (
-              <button onClick={() => { setPage(1); setProjects([]); setQuery(""); setSkillFilter(""); setShowOnlyMine(false); setStatusFilter(""); }} style={styles.clearBtn}>پاک کردن فیلترها</button>
+            {(query || skillFilter || statusFilter) && (
+              <button className="projects-filter-reset" onClick={() => { setPage(1); setProjects([]); setQuery(""); setSkillFilter(""); setStatusFilter(""); }} style={styles.clearBtn}>پاک کردن فیلترها</button>
             )}
           </div>
 
@@ -516,178 +513,128 @@ export default function Projects() {
                       <option value="open">باز</option>
                       <option value="in_progress">در حال انجام</option>
                       <option value="completed">تکمیل‌شده</option>
+                      <option value="cancelled">لغوشده</option>
                     </select>
                   </label>
-                  {user?.user_type === "client" && (
-                    <label className="project-mobile-mine-filter">
-                      <input type="checkbox" checked={showOnlyMine} onChange={(event) => setShowOnlyMine(event.target.checked)} />
-                      فقط پروژه‌های من
-                    </label>
-                  )}
                 </div>
               )}
             </section>
           )}
 
-          {loading ? (
+          {loadError && (
+            <div className="projects-load-error" role="alert">
+              <p>{loadError}</p>
+              <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>تلاش دوباره</button>
+            </div>
+          )}
+          {loading && projects.length === 0 ? (
             <div style={styles.loadingCard}><div style={styles.spinner} /><p>در حال بارگذاری پروژه‌ها...</p></div>
-          ) : filtered.length === 0 ? (
-            <div style={styles.emptyCard}><div style={styles.emptyIcon}>📭</div><h3 style={styles.emptyTitle}>نتیجه‌ای یافت نشد</h3><p style={styles.emptyText}>{query || skillFilter ? "فیلترها را تغییر دهید یا عبارت دیگری جستجو کنید." : "هیچ پروژه‌ای در حال حاضر موجود نیست."}</p></div>
-          ) : (
-            <div style={styles.projectsGrid}>
-              {filtered.map((p) => (
-                <article key={p.id} style={styles.projectCard}>
-                  <div style={styles.projectCardGlow} />
+          ) : loadError && projects.length === 0 ? null : (
+            filtered.length === 0 ? (
+              <div style={styles.emptyCard}><div style={styles.emptyIcon}>📭</div><h3 style={styles.emptyTitle}>نتیجه‌ای یافت نشد</h3><p style={styles.emptyText}>{query || skillFilter ? "فیلترها را تغییر دهید یا عبارت دیگری جستجو کنید." : "هیچ پروژه‌ای در حال حاضر موجود نیست."}</p></div>
+            ) : (
+              <div style={styles.projectsGrid}>
+                {filtered.map((p) => (
+                  <article key={p.id} style={styles.projectCard}>
+                    <div style={styles.projectCardGlow} />
 
-                  <div style={{ position: "relative", zIndex: 2 }}>
-                    <div style={styles.projectHeader}>
-                      <h3 style={styles.projectTitle}>{p.title}</h3>
+                    <div style={{ position: "relative", zIndex: 2 }}>
+                      <div style={styles.projectHeader}>
+                        <h3 style={styles.projectTitle}>{p.title}</h3>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {renderStatusBadgeInline(p.status)}
-                        <div style={styles.projectBudget}>
-                          <span style={styles.budgetAmount}>{formatCurrencyToToman(p.budget_min)} - {formatCurrencyToToman(p.budget_max)}</span>
-                          <span style={styles.budgetLabel}>تومان</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {renderStatusBadgeInline(p.status)}
+                          <div style={styles.projectBudget}>
+                            <span style={styles.budgetAmount}>{formatCurrencyToToman(p.budget_min)} - {formatCurrencyToToman(p.budget_max)}</span>
+                            <span style={styles.budgetLabel}>تومان</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <p style={styles.projectDescription}>{p.description?.slice?.(0, 160)}{p.description?.length > 160 && "..."}</p>
+                      <p style={styles.projectDescription}>{p.description?.slice?.(0, 160)}{p.description?.length > 160 && "..."}</p>
 
-                    {(Array.isArray(p.skills) ? p.skills : (p.skills || "").toString().split(",").map((x) => x.trim())).length > 0 && (
-                      <div style={styles.skillsContainer}>
-                        {(Array.isArray(p.skills) ? p.skills : (p.skills || "").toString().split(",").map((x) => x.trim())).slice(0, 5).map((sk, i) => (
-                          <button key={i} onClick={() => setSkillFilter(sk)} style={styles.skillChip}>{sk}</button>
-                        ))}
-                      </div>
-                    )}
+                      {(Array.isArray(p.skills) ? p.skills : (p.skills || "").toString().split(",").map((x) => x.trim())).length > 0 && (
+                        <div style={styles.skillsContainer}>
+                          {(Array.isArray(p.skills) ? p.skills : (p.skills || "").toString().split(",").map((x) => x.trim())).slice(0, 5).map((sk, i) => (
+                            <button className="project-skill-tag" key={i} onClick={() => setSkillFilter(sk)} style={styles.skillChip}>{sk}</button>
+                          ))}
+                        </div>
+                      )}
 
-                    <div style={styles.projectFooter}>
-                      <div style={styles.projectMeta}>
-                        <span style={styles.metaItem}><span style={styles.metaIcon}>📅</span>{formatDateIran(p.created_at)}</span>
-                        {p.category && (<span style={styles.metaItem}><span style={styles.metaIcon}>📂</span>{formatProjectCategory(p.category)}</span>)}
-                      </div>
+                      <div style={styles.projectFooter}>
+                        <div style={styles.projectMeta}>
+                          <span style={styles.metaItem}><span style={styles.metaIcon}>📅</span>{formatDateIran(p.created_at)}</span>
+                          {p.category && (<span style={styles.metaItem}><span style={styles.metaIcon}>📂</span>{formatProjectCategory(p.category)}</span>)}
+                        </div>
 
-                      <div style={styles.projectActions}>
-                        <Link to={`/dashboard/projects/${p.id}`} style={styles.viewBtn}>جزئیات</Link>
+                        <div style={styles.projectActions}>
+                          <Link className="project-secondary-action" to={`/dashboard/projects/${p.id}`} style={styles.viewBtn}>جزئیات</Link>
 
-                        {user?.user_type === "freelancer" && (
-                          p.status === "open" ? (
-                            p.has_applied ? (
-                              <div style={{ ...styles.applyBtn, opacity: 0.6, cursor: "not-allowed", display: "inline-flex", alignItems: "center", gap: 8 }}>✅ پیشنهاد ارسال شده</div>
-                            ) : (
-                              applyingFor === p.id ? (
-                                <div style={styles.proposalForm}>
-                                  <textarea aria-label="متن پیشنهاد" placeholder="پیشنهاد خود را بنویسید..." value={proposal.cover_letter} onChange={(e) => setProposal({ ...proposal, cover_letter: e.target.value })} style={styles.proposalTextarea} rows={3} />
-                                  <input aria-label="مبلغ پیشنهاد به تومان" inputMode="numeric" placeholder="پیشنهاد قیمت (تومان)" value={proposal.bid} onChange={(e) => setProposal({ ...proposal, bid: e.target.value })} style={styles.proposalInput} />
-                                  <div style={styles.proposalActions}>
-                                    <button onClick={() => setApplyingFor(null)} disabled={submitting} style={styles.cancelBtn}>انصراف</button>
-                                    <button onClick={() => submitProposal(p.id)} disabled={submitting} style={styles.submitBtn}>{submitting ? <><span style={styles.smallSpinner} /> ارسال...</> : "✉️ ارسال"}</button>
+                          {user?.user_type === "freelancer" && (
+                            p.status === "open" ? (
+                              p.has_applied ? (
+                                <div style={{ ...styles.applyBtn, opacity: 0.6, cursor: "not-allowed", display: "inline-flex", alignItems: "center", gap: 8 }}>✅ پیشنهاد ارسال شده</div>
+                              ) : (
+                                applyingFor === p.id ? (
+                                  <div style={styles.proposalForm}>
+                                    <textarea aria-label="متن پیشنهاد" placeholder="پیشنهاد خود را بنویسید..." value={proposal.cover_letter} onChange={(e) => setProposal({ ...proposal, cover_letter: e.target.value })} style={styles.proposalTextarea} rows={3} />
+                                    <input aria-label="مبلغ پیشنهاد به تومان" inputMode="numeric" placeholder="پیشنهاد قیمت (تومان)" value={proposal.bid} onChange={(e) => setProposal({ ...proposal, bid: e.target.value })} style={styles.proposalInput} />
+                                    <div style={styles.proposalActions}>
+                                      <button onClick={() => setApplyingFor(null)} disabled={submitting} style={styles.cancelBtn}>انصراف</button>
+                                      <button onClick={() => submitProposal(p.id)} disabled={submitting} style={styles.submitBtn}>{submitting ? <><span style={styles.smallSpinner} /> ارسال...</> : "✉️ ارسال"}</button>
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <button onClick={() => { if (!p.has_applied) { setApplyingFor(p.id); setProposal({ cover_letter: "", bid: "" }); } }} style={styles.applyBtn}>📨 ارسال پیشنهاد</button>
+                                ) : (
+                                  <button onClick={() => { if (!p.has_applied) { setApplyingFor(p.id); setProposal({ cover_letter: "", bid: "" }); } }} style={styles.applyBtn}>📨 ارسال پیشنهاد</button>
+                                )
                               )
+                            ) : p.status === "completed" && p.hired_freelancer?.id === user?.id ? (
+                              (() => {
+                                const targetClientId = p.client?.id || p.client;
+                                const userHasRatedTarget = hasUserRatedProject(p.id, targetClientId);
+                                return userHasRatedTarget || p.has_rated_client ? (
+                                  <button disabled style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(16, 185, 129, 0.2)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", cursor: "not-allowed", fontWeight: 800, display: "flex", alignItems: "center", gap: 6, opacity: 0.7 }}>
+                                    ✅ شما امتیاز داده‌اید
+                                  </button>
+                                ) : (
+                                  <button onClick={() => markProjectCompleted(p.id, null, p.client?.id || p.client, true)} style={{ padding: "10px 14px", borderRadius: 8, background: "linear-gradient(135deg,#f97316,#f59e0b)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
+                                    ⭐ امتیاز به کارفرما
+                                  </button>
+                                );
+                              })()
+                            ) : (
+                              <div style={{ ...styles.applyBtn, opacity: 0.6, cursor: "not-allowed" }}>{p.status === "completed" ? "پروژه تمام شده" : "پروژه در حال انجام"}</div>
                             )
-                          ) : p.status === "completed" && p.hired_freelancer?.id === user?.id ? (
-                            (() => {
-                              const targetClientId = p.client?.id || p.client;
-                              const userHasRatedTarget = hasUserRatedProject(p.id, targetClientId);
-                              return userHasRatedTarget || p.has_rated_client ? (
-                                <button 
-                                  disabled
-                                  style={{ 
-                                    padding: "10px 14px", 
-                                    borderRadius: 8, 
-                                    background: "rgba(16, 185, 129, 0.2)", 
-                                    color: "#10b981",
-                                    border: "1px solid rgba(16, 185, 129, 0.3)", 
-                                    cursor: "not-allowed", 
-                                    fontWeight: 800,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                    opacity: 0.7
-                                  }}
-                                >
-                                  ✅ شما امتیاز داده‌اید
-                                </button>
-                              ) : (
-                                <button 
-                                  onClick={() => markProjectCompleted(p.id, null, p.client?.id || p.client, true)} 
-                                  style={{ 
-                                    padding: "10px 14px", 
-                                    borderRadius: 8, 
-                                    background: "linear-gradient(135deg,#f97316,#f59e0b)", 
-                                    color: "#fff", 
-                                    border: "none", 
-                                    cursor: "pointer", 
-                                    fontWeight: 800,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6
-                                  }}
-                                >
-                                  ⭐ امتیاز به کارفرما
-                                </button>
-                              );
-                            })()
-                          ) : (
-                            <div style={{ ...styles.applyBtn, opacity: 0.6, cursor: "not-allowed" }}>{p.status === "completed" ? "پروژه تمام شده" : "پروژه در حال انجام"}</div>
-                          )
-                        )}
+                          )}
 
-                        {user?.user_type === "client" && (() => {
-                          const clientId = typeof p.client === "number" ? p.client : p.client?.id;
-                          if (clientId === user?.id) {
-                            return (
-                              <>
-                                {p.status === "open" && (
-                                  <Link to={`/dashboard/projects/${p.id}/edit`} style={styles.editBtn}>✏️ ویرایش</Link>
-                                )}
-                                
-                                {p.status === "open" && (
-                                  <button onClick={() => handleDeleteProject(p.id)} style={styles.deleteBtn}>🗑 حذف</button>
-                                )}
-                                
-                                {p.status === "in_progress" && (
-                                  (() => {
+                          {user?.user_type === "client" && (() => {
+                            const clientId = typeof p.client === "number" ? p.client : p.client?.id;
+                            if (clientId === user?.id) {
+                              return (
+                                <>
+                                  {p.status === "open" && <Link className="project-edit-action" to={`/dashboard/projects/${p.id}/edit`} style={styles.editBtn}>ویرایش</Link>}
+                                  {p.status === "open" && <button className="project-delete-action" onClick={() => handleDeleteProject(p.id)} style={styles.deleteBtn}>حذف</button>}
+                                  {p.status === "in_progress" && (() => {
                                     const targetFreelancerId = p.hired_freelancer?.id || p.hired_freelancer;
                                     const userHasRatedTarget = hasUserRatedProject(p.id, targetFreelancerId);
                                     return userHasRatedTarget ? (
-                                      <button 
-                                        disabled
-                                        style={{ 
-                                          padding: "10px 14px", 
-                                          borderRadius: 8, 
-                                          background: "rgba(16, 185, 129, 0.2)", 
-                                          color: "#10b981",
-                                          border: "1px solid rgba(16, 185, 129, 0.3)", 
-                                          cursor: "not-allowed", 
-                                          fontWeight: 800,
-                                          opacity: 0.7
-                                        }}
-                                      >
-                                        ✅ شما امتیاز داده‌اید
-                                      </button>
+                                      <button disabled style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(16, 185, 129, 0.2)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", cursor: "not-allowed", fontWeight: 800, opacity: 0.7 }}>✅ شما امتیاز داده‌اید</button>
                                     ) : (
-                                      <button onClick={() => markProjectCompleted(p.id, p.hired_freelancer?.id)} style={{ padding: "10px 14px", borderRadius: 8, background: "linear-gradient(135deg,#f97316,#f59e0b)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 800 }}>
-                                        ✅ تایید تحویل
-                                      </button>
+                                      <button onClick={() => markProjectCompleted(p.id, p.hired_freelancer?.id)} style={{ padding: "10px 14px", borderRadius: 8, background: "linear-gradient(135deg,#f97316,#f59e0b)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 800 }}>✅ تایید تحویل</button>
                                     );
-                                  })()
-                                )}
-                              </>
-                            );
-                          }
-                          return null;
-                        })()}
+                                  })()}
+                                </>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </article>
+                ))}
+              </div>
+            )
           )}
           {hasNextPage && !loading && (
             <button onClick={() => setPage((current) => current + 1)} style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}>

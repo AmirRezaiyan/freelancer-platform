@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowUpLeft, BriefcaseBusiness, Check, FileText, FolderOpen, MessageCircle, Plus, Search, Trash2 } from "lucide-react";
 import ResilientImage from "../components/ResilientImage";
-import { formatCurrencyToToman, formatDateIran } from "../utils/formatters";
+import { formatActivityAction, formatCurrencyToToman, formatDateIran, formatProjectCategory } from "../utils/formatters";
 import { entityId } from "../utils/dashboardData";
 
 const projectStatusLabels = {
@@ -54,6 +54,12 @@ export default function DashboardOverview({
   loading,
   error,
   projects = [],
+  openProjects = [],
+  discoveryLoading,
+  discoveryError,
+  onRetryDiscovery,
+  onRetryProposals,
+  onRetryDashboard,
   projectError,
   projectProposals = [],
   proposals = [],
@@ -63,6 +69,8 @@ export default function DashboardOverview({
   activityError,
   portfolios = [],
   portfolioLoading,
+  portfolioError,
+  onRetryPortfolios,
   deletingId,
   onAddPortfolio,
   onEditPortfolio,
@@ -100,10 +108,15 @@ export default function DashboardOverview({
           <>
             <Metric label="پیشنهادهای ارسال‌شده" value={metrics.proposalsSent} icon={<FileText size={18} />} />
             <Metric label="در انتظار بررسی" value={metrics.pendingProposals} icon={<MessageCircle size={18} />} />
-            <Metric label="قراردادهای فعال" value={metrics.activeContracts} icon={<Check size={18} />} />
+            <Metric label="پیشنهادهای پذیرفته‌شده" value={metrics.acceptedProposals} icon={<Check size={18} />} />
           </>
         )}
-        {error && <p className="dashboard-inline-error" role="alert">{error}</p>}
+        {error && (
+          <div className="dashboard-inline-error" role="alert">
+            <span>{error}</span>
+            <button type="button" onClick={onRetryDashboard}>تلاش دوباره</button>
+          </div>
+        )}
         {loading && <span className="dashboard-loading-note" role="status">در حال به‌روزرسانی آمار...</span>}
       </section>
 
@@ -114,7 +127,10 @@ export default function DashboardOverview({
               <section className="dashboard-section">
                 <SectionHeading title="پروژه‌های اخیر شما" to="/dashboard/projects" action="همه پروژه‌ها" />
                 {projectError ? (
-                  <p className="dashboard-inline-error" role="alert">{projectError}</p>
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{projectError}</span>
+                    <button type="button" onClick={onRetryDiscovery}>تلاش دوباره</button>
+                  </div>
                 ) : projects.length ? (
                   <div className="dashboard-project-list">
                     {projects.map((project) => {
@@ -161,7 +177,10 @@ export default function DashboardOverview({
               <section className="dashboard-section">
                 <SectionHeading title="پیشنهادهای اخیر" to="/dashboard/projects" action="بررسی پروژه‌ها" />
                 {proposalError && !hasClientProposalData ? (
-                  <p className="dashboard-inline-error" role="alert">{proposalError}</p>
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{proposalError}</span>
+                    <button type="button" onClick={onRetryProposals}>تلاش دوباره</button>
+                  </div>
                 ) : hasClientProposalData ? (
                   <div className="dashboard-proposal-list">
                     {projectProposals.filter((item) => item.latest).map(({ projectId, projectTitle, latest }) => (
@@ -193,8 +212,17 @@ export default function DashboardOverview({
             <>
               <section className="dashboard-section">
                 <SectionHeading title="پیشنهادهای اخیر شما" to="/dashboard/proposals" action="همه پیشنهادها" />
-                {proposalError ? (
-                  <p className="dashboard-inline-error" role="alert">{proposalError}</p>
+                {proposalError && proposals.length > 0 && (
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{proposalError}</span>
+                    <button type="button" onClick={onRetryProposals}>تلاش دوباره</button>
+                  </div>
+                )}
+                {proposalError && !proposals.length ? (
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{proposalError}</span>
+                    <button type="button" onClick={onRetryProposals}>تلاش دوباره</button>
+                  </div>
                 ) : proposals.length ? (
                   <div className="dashboard-proposal-list">
                     {proposals.map((proposal) => {
@@ -227,11 +255,77 @@ export default function DashboardOverview({
               </section>
 
               <section className="dashboard-section">
+                <SectionHeading title="پروژه‌های باز تازه" to="/dashboard/projects" action="مشاهده همه" />
+                {discoveryError && openProjects.length > 0 && (
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{discoveryError}</span>
+                    <button type="button" onClick={onRetryDiscovery}>تلاش دوباره</button>
+                  </div>
+                )}
+                {discoveryError && !openProjects.length ? (
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{discoveryError}</span>
+                    <button type="button" onClick={onRetryDiscovery}>تلاش دوباره</button>
+                  </div>
+                ) : discoveryLoading && !openProjects.length ? (
+                  <p className="dashboard-loading-note" role="status">در حال دریافت پروژه‌های باز...</p>
+                ) : openProjects.length ? (
+                  <div className="dashboard-discovery-list">
+                    {openProjects.map((project) => {
+                      const minimum = Number(project.budget_min);
+                      const maximum = Number(project.budget_max);
+                      const hasMinimum = project.budget_min != null && project.budget_min !== "" && Number.isFinite(minimum);
+                      const hasMaximum = project.budget_max != null && project.budget_max !== "" && Number.isFinite(maximum);
+                      const budget = hasMinimum && hasMaximum
+                        ? `${formatCurrencyToToman(minimum)} تا ${formatCurrencyToToman(maximum)}`
+                        : hasMinimum
+                          ? `از ${formatCurrencyToToman(minimum)}`
+                          : hasMaximum
+                            ? `تا ${formatCurrencyToToman(maximum)}`
+                            : null;
+                      const skills = Array.isArray(project.skills) ? project.skills.filter(Boolean).slice(0, 4) : [];
+                      return (
+                        <article className="dashboard-discovery-row" key={project.id}>
+                          <div className="dashboard-project-main">
+                            <Link className="dashboard-item-title" to={`/dashboard/projects/${project.id}`}>{project.title}</Link>
+                            <p className="dashboard-discovery-description">{project.description}</p>
+                            <div className="dashboard-discovery-meta">
+                              <span>{formatProjectCategory(project.category)}</span>
+                              {budget && <span>{budget}</span>}
+                              {project.created_at && <time>{formatDateIran(project.created_at)}</time>}
+                            </div>
+                            {skills.length > 0 && (
+                              <ul className="dashboard-skill-list" aria-label="مهارت‌های موردنیاز">
+                                {skills.map((skill) => <li key={skill}>{skill}</li>)}
+                              </ul>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="در حال حاضر پروژهٔ بازی برای نمایش نیست."
+                    description="بعداً دوباره بررسی کنید یا فهرست پروژه‌ها را ببینید."
+                    to="/dashboard/projects"
+                    action="رفتن به پروژه‌ها"
+                  />
+                )}
+              </section>
+
+              <section className="dashboard-section">
                 <SectionHeading title="نمونه‌کارهای شما" to="/dashboard/profile" action="مدیریت پروفایل" />
                 <div className="dashboard-portfolio-heading">
                   <span>{portfolios.length ? `${portfolios.length.toLocaleString("fa-IR")} نمونه‌کار` : "نمونه‌کار ثبت‌شده‌ای ندارید"}</span>
                   <button type="button" onClick={onAddPortfolio}><Plus size={16} aria-hidden="true" /> افزودن نمونه‌کار</button>
                 </div>
+                {portfolioError && (
+                  <div className="dashboard-inline-error" role="alert">
+                    <span>{portfolioError}</span>
+                    <button type="button" onClick={onRetryPortfolios}>تلاش دوباره</button>
+                  </div>
+                )}
                 {portfolioLoading ? (
                   <p className="dashboard-loading-note" role="status">در حال بارگذاری نمونه‌کارها...</p>
                 ) : portfolios.length ? (
@@ -260,7 +354,7 @@ export default function DashboardOverview({
                       </article>
                     ))}
                   </div>
-                ) : (
+                ) : portfolioError ? null : (
                   <EmptyState title="نمونه‌کارهایتان را به پروفایل اضافه کنید." description="فقط مواردی که خودتان ثبت کرده‌اید در اینجا نمایش داده می‌شوند." />
                 )}
               </section>
@@ -273,13 +367,16 @@ export default function DashboardOverview({
           {activityLoading ? (
             <p className="dashboard-loading-note" role="status">در حال بارگذاری...</p>
           ) : activityError ? (
-            <p className="dashboard-inline-error" role="alert">{activityError}</p>
+            <div className="dashboard-inline-error" role="alert">
+              <span>{activityError}</span>
+              <button type="button" onClick={onRetryDashboard}>تلاش دوباره</button>
+            </div>
           ) : activities.length ? (
             <ol className="dashboard-activity-list">
               {activities.slice(0, 5).map((activity) => (
                 <li key={activity.id}>
-                  <span>{activity.action}</span>
-                  <time>{formatDateIran(activity.created_at)}</time>
+                  <span>{formatActivityAction(activity.action)}</span>
+                  <time dateTime={activity.created_at}>{formatDateIran(activity.created_at)}</time>
                 </li>
               ))}
             </ol>

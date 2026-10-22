@@ -105,7 +105,7 @@ export default function WorkspaceHeader({ sidebarOpen, onToggleSidebar }) {
                 onClick={() => {
                   setMenuOpen(false);
                   logout();
-                  navigate("/login", { replace: true });
+                  navigate("/", { replace: true });
                 }}
               >
                 <LogOut size={17} aria-hidden="true" /> خروج از حساب

@@ -23,15 +23,33 @@ function RequireAuth({ children }) {
   return children;
 }
 
+function RequireRole({ role, children }) {
+  const { user, loading } = React.useContext(AuthContext);
+  if (loading) return <div className="app-loading" role="status">در حال بررسی حساب کاربری...</div>;
+  return user?.user_type === role ? children : <Navigate to="/dashboard" replace />;
+}
+
+function PublicRoute({ children }) {
+  const { user, loading } = React.useContext(AuthContext);
+  if (loading) return <div className="app-loading" role="status">در حال بررسی حساب کاربری...</div>;
+  return user ? <Navigate to="/dashboard" replace /> : children;
+}
+
+function FallbackRoute() {
+  const { user, loading } = React.useContext(AuthContext);
+  if (loading) return <div className="app-loading" role="status">در حال بررسی حساب کاربری...</div>;
+  return <Navigate to={user ? "/dashboard" : "/login"} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Suspense fallback={<div className="app-loading" role="status">در حال بارگذاری...</div>}>
           <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/" element={<PublicRoute><Home /></PublicRoute>} />
+            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
             <Route
               path="/dashboard/*"
@@ -42,15 +60,15 @@ export default function App() {
               }
             >
               <Route path="projects" element={<Projects />} />
-              <Route path="projects/create" element={<ProjectCreate />} />
-              <Route path="projects/:id/edit" element={<ProjectEdit />} />
+              <Route path="projects/create" element={<RequireRole role="client"><ProjectCreate /></RequireRole>} />
+              <Route path="projects/:id/edit" element={<RequireRole role="client"><ProjectEdit /></RequireRole>} />
               <Route path="projects/:id" element={<ProjectDetails />} />
               <Route path="messages" element={<Messages />} />
               <Route path="profile" element={<Profile />} />
-              <Route path="proposals" element={<Proposals />} />
+              <Route path="proposals" element={<RequireRole role="freelancer"><Proposals /></RequireRole>} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<FallbackRoute />} />
           </Routes>
         </Suspense>
       </AuthProvider>

@@ -4,6 +4,7 @@ import { AuthContext } from "../context/auth-context";
 import { formatDateIran } from "../utils/formatters";
 import fetchAllPages from "../utils/fetchAllPages";
 import ResilientImage from "../components/ResilientImage";
+import { BriefcaseBusiness, Building2, CalendarDays, Camera, Check, Globe2, LoaderCircle, Mail, Phone, RotateCcw, Save, Star, UserRound, X } from "lucide-react";
 
 function TagInput({ id, value = [], onChange, placeholder = "برای افزودن Enter بزن" }) {
   const [input, setInput] = useState("");
@@ -34,6 +35,7 @@ function TagInput({ id, value = [], onChange, placeholder = "برای افزود
   return (
     <div style={{ marginBottom: 12 }}>
       <div
+        className="profile-tag-input"
         onClick={() => inputRef.current && inputRef.current.focus()}
         style={{
           display: "flex",
@@ -51,6 +53,7 @@ function TagInput({ id, value = [], onChange, placeholder = "برای افزود
       >
         {value.map((tag) => (
           <div
+            className="profile-tag-chip"
             key={tag}
             style={{
               display: "inline-flex",
@@ -75,6 +78,7 @@ function TagInput({ id, value = [], onChange, placeholder = "برای افزود
           >
             <span>{tag}</span>
             <button
+              className="profile-tag-remove"
               type="button"
               onClick={() => removeTag(tag)}
               style={{
@@ -102,6 +106,7 @@ function TagInput({ id, value = [], onChange, placeholder = "برای افزود
         ))}
 
         <input
+          className="profile-tag-entry"
           id={id}
           ref={inputRef}
           value={input}
@@ -121,7 +126,7 @@ function TagInput({ id, value = [], onChange, placeholder = "برای افزود
           }}
         />
       </div>
-      <div style={{ marginTop: 8, fontSize: 13, color: "#94a3b8", textAlign: "right", paddingRight: 4 }}>
+      <div className="profile-tag-help" style={{ marginTop: 8, fontSize: 13, color: "#94a3b8", textAlign: "right", paddingRight: 4 }}>
         برای افزودن یک مورد بنویسید و Enter بزنید — برای حذف روی × کلیک کنید.
       </div>
     </div>
@@ -131,6 +136,7 @@ function TagInput({ id, value = [], onChange, placeholder = "برای افزود
 function SelectInput({ id, value, onChange, options, placeholder }) {
   return (
     <select
+      className="profile-select"
       id={id}
       value={value || ""}
       onChange={onChange}
@@ -215,10 +221,10 @@ export default function Profile() {
 
   const placeholderSvg = `data:image/svg+xml;utf8,${encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-      <rect width="120" height="120" rx="14" fill="#0b0b0d"/>
+      <rect width="120" height="120" rx="14" fill="#eaf1ec"/>
       <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-        <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+        <stop offset="0%" style="stop-color:#236b53;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#183f32;stop-opacity:1" />
       </linearGradient>
       <g fill="url(#grad1)">
         <circle cx="60" cy="40" r="22"/>
@@ -883,50 +889,60 @@ export default function Profile() {
 
   return (
     <div className="profile-page" style={pageStyles.container}>
-      <div style={pageStyles.header}>
-        <h2 style={pageStyles.title}>پروفایل من</h2>
-        <div style={pageStyles.userTypeBadge}>
-          {isFreelancer ? "👨‍💻 فریلنسر" : isClient ? "👔 کارفرما" : "👤 کاربر"}
+      <div className="profile-page-header" style={pageStyles.header}>
+        <div className="profile-heading-copy">
+          <span>حساب کاربری</span>
+          <h2 style={pageStyles.title}>پروفایل من</h2>
+        </div>
+        <div className="profile-role-badge" style={pageStyles.userTypeBadge}>
+          <BriefcaseBusiness size={15} aria-hidden="true" />
+          {isFreelancer ? "فریلنسر" : isClient ? "کارفرما" : "کاربر"}
         </div>
       </div>
 
-      <form className="profile-form" onSubmit={submit} style={pageStyles.form} dir="rtl">
+      <form className="profile-form" onSubmit={submit} style={pageStyles.form} dir="rtl" aria-busy={saving}>
         <div className="profile-sidebar" style={pageStyles.leftCol}>
           <div className="profile-avatar-card" style={pageStyles.avatarCard}>
             <div style={pageStyles.avatarWrap}>
               <ResilientImage src={preview || placeholderSvg} alt="آواتار" style={pageStyles.avatar} />
             </div>
 
+            <div className="profile-avatar-identity">
+              <h3>{u.first_name || u.last_name ? getUserDisplayName(u) : isFreelancer ? "فریلنسر" : isClient ? "کارفرما" : "کاربر"}</h3>
+              <span>{u.email}</span>
+            </div>
+
             <div style={pageStyles.avatarActions}>
-              <label style={pageStyles.uploadLabel}>
-                <span>📁 انتخاب آواتار</span>
+              <label className="profile-upload-label" style={pageStyles.uploadLabel}>
+                <Camera size={16} aria-hidden="true" />
+                <span>تغییر تصویر</span>
                 <input type="file" name="avatar" accept="image/*" onChange={onFileInputChange} style={{ display: "none" }} />
               </label>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", width: "100%" }}>
-                <button type="button" onClick={removeSelectedAvatar} style={pageStyles.secondaryBtn}>
-                  🔄 بازنشانی
+              <div className="profile-avatar-actions-row" style={{ display: "flex", gap: 8, justifyContent: "center", width: "100%" }}>
+                <button className="profile-reset-avatar" type="button" onClick={removeSelectedAvatar} style={pageStyles.secondaryBtn}>
+                  <RotateCcw size={14} aria-hidden="true" /> بازنشانی
                 </button>
-                <div style={pageStyles.hint}>فرمت: JPG/PNG · حداکثر 6MB</div>
               </div>
+              <div className="profile-upload-hint" style={pageStyles.hint}>JPG یا PNG · حداکثر ۶ مگابایت</div>
             </div>
           </div>
 
           <div className="profile-info-card" style={pageStyles.infoCard}>
             <div style={pageStyles.infoRow}>
-              <div style={pageStyles.infoLabel}>📧 ایمیل</div>
+              <div style={pageStyles.infoLabel}><Mail size={15} aria-hidden="true" /> ایمیل</div>
               <div style={pageStyles.infoValue}>{u.email}</div>
             </div>
             <div style={pageStyles.infoRow}>
-              <div style={pageStyles.infoLabel}>👤 نوع کاربر</div>
+              <div style={pageStyles.infoLabel}><UserRound size={15} aria-hidden="true" /> نوع کاربر</div>
               <div style={pageStyles.infoValue}>{u.user_type === "client" ? "کارفرما" : "فریلنسر"}</div>
             </div>
             <div style={pageStyles.infoRow}>
-              <div style={pageStyles.infoLabel}>📅 عضویت از</div>
+              <div style={pageStyles.infoLabel}><CalendarDays size={15} aria-hidden="true" /> عضویت از</div>
               <div style={pageStyles.infoValue}>{formatDateIran(u.created_at)}</div>
             </div>
             {isClient && form.company_size && (
               <div style={pageStyles.infoRow}>
-                <div style={pageStyles.infoLabel}>🏢 اندازه شرکت</div>
+                <div style={pageStyles.infoLabel}><Building2 size={15} aria-hidden="true" /> اندازه شرکت</div>
                 <div style={pageStyles.infoValue}>
                   {form.company_size === "small" && "کوچک (1-10 نفر)"}
                   {form.company_size === "medium" && "متوسط (11-50 نفر)"}
@@ -936,96 +952,19 @@ export default function Profile() {
             )}
             {isFreelancer && form.experience_years && (
               <div style={pageStyles.infoRow}>
-                <div style={pageStyles.infoLabel}>📊 سال‌های تجربه</div>
+                <div style={pageStyles.infoLabel}><BriefcaseBusiness size={15} aria-hidden="true" /> سال‌های تجربه</div>
                 <div style={pageStyles.infoValue}>{form.experience_years} سال</div>
               </div>
             )}
           </div>
 
-          <div className="profile-reviews-card" style={pageStyles.reviewsCard}>
-            <div style={pageStyles.reviewsHeader}>
-              <h3 style={pageStyles.reviewsTitle}>⭐ نظرات و امتیازها</h3>
-              {averageRating > 0 && (
-                <div style={pageStyles.averageRating}>
-                  <span style={{ fontSize: 24, fontWeight: 900, color: "#ffd166" }}>{averageRating}</span>
-                  <div style={{ display: "flex", gap: 2 }}>{renderStars(Math.round(averageRating))}</div>
-                  <span style={{ fontSize: 12, color: "#64748b" }}>از {reviews.length} نظر</span>
-                </div>
-              )}
-            </div>
-
-            {loadingReviews ? (
-              <div style={{ textAlign: "center", padding: 20, color: "#94a3b8" }}>📥 در حال بارگذاری نظرات...</div>
-            ) : reviews.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 30, color: "#64748b" }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
-                <div>هنوز نظری ثبت نشده است</div>
-              </div>
-            ) : (
-              <div style={pageStyles.reviewsList}>
-                {reviews.map((review, idx) => {
-                  const reviewerName = extractUserName(review);
-                  const userType = extractUserType(review);
-                  const avatarSrc = extractUserAvatar(review);
-                  
-                  return (
-                    <div key={idx} className="profile-review-item" style={pageStyles.reviewItem}>
-                      <div style={pageStyles.reviewHeader}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <img
-                            src={avatarSrc || placeholderSvg}
-                            alt="avatar"
-                            style={{
-                              width: 52,
-                              height: 52,
-                              borderRadius: '50%',
-                              objectFit: 'cover',
-                              border: '2px solid rgba(255,255,255,0.1)',
-                              backgroundColor: 'rgba(255,255,255,0.05)'
-                            }}
-                            onError={(e) => {
-                              e.target.onerror = null;
-                              e.target.src = placeholderSvg;
-                            }}
-                          />
-                          <div>
-                            <div className="profile-reviewer-name" style={pageStyles.reviewerName}>
-                              {reviewerName}
-                              <span className="profile-reviewer-role" style={{
-                                fontSize: 12, 
-                                color: userType === "کارفرما" ? "#8b5cf6" : userType === "فریلنسر" ? "#3b82f6" : "#64748b", 
-                                marginRight: 8, 
-                                display: "inline-block",
-                                fontWeight: 600
-                              }}>
-                                ({userType})
-                              </span>
-                            </div>
-                            <div className="profile-review-date" style={pageStyles.reviewDate}>{formatDateIran(review.created_at)}</div>
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 2 }}>{renderStars(review.rating)}</div>
-                      </div>
-                      {review.review && <p className="profile-review-text" style={pageStyles.reviewText}>{review.review}</p>}
-                      <div className="profile-review-project" style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
-                        <div>
-                          پروژه: <strong>{review.project_title || `پروژه #${review.project}`}</strong>
-                        </div>
-                        {review.project_budget && <div style={{ marginTop: 2 }}>بودجه: {review.project_budget}</div>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="profile-fields" style={pageStyles.rightCol}>
           <div className="profile-edit-card" style={pageStyles.card}>
-            <div className="profile-section-title" style={pageStyles.sectionTitle}>👤 اطلاعات شخصی</div>
+            <div className="profile-section-title" style={pageStyles.sectionTitle}><UserRound size={17} aria-hidden="true" /> اطلاعات شخصی</div>
             
-            <div style={pageStyles.rowTwo}>
+            <div className="profile-row-two" style={pageStyles.rowTwo}>
               <div style={{ flex: 1 }}>
                 <label htmlFor="first_name" style={pageStyles.label}>نام</label>
                 <input 
@@ -1048,7 +987,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <label htmlFor="phone" style={pageStyles.label}>📱 شماره تماس</label>
+            <label htmlFor="phone" style={pageStyles.label}><Phone size={14} aria-hidden="true" /> شماره تماس</label>
             <input 
               id="phone" 
               name="phone" 
@@ -1058,7 +997,7 @@ export default function Profile() {
               placeholder="مثال: 09123456789" 
             />
 
-            <label htmlFor="bio" style={pageStyles.label}>📝 بیوگرافی / درباره من</label>
+            <label htmlFor="bio" style={pageStyles.label}>بیوگرافی / درباره من</label>
             <textarea 
               id="bio"
               name="bio" 
@@ -1071,11 +1010,11 @@ export default function Profile() {
 
             {isFreelancer && (
               <>
-                <div className="profile-section-title" style={pageStyles.sectionTitle}>💼 اطلاعات فریلنسری</div>
+                <div className="profile-section-title" style={pageStyles.sectionTitle}><BriefcaseBusiness size={17} aria-hidden="true" /> اطلاعات فریلنسری</div>
                 
-                <div style={pageStyles.rowTwo}>
+                <div className="profile-row-two profile-freelancer-row" style={pageStyles.rowTwo}>
                   <div style={{ flex: 1 }}>
-                    <label htmlFor="skills-input" style={pageStyles.labelSmall}>🛠️ مهارت‌های تخصصی</label>
+                    <label htmlFor="skills-input" style={pageStyles.labelSmall}>مهارت‌های تخصصی</label>
                     <TagInput 
                       id="skills-input" 
                       value={form.skills} 
@@ -1084,7 +1023,7 @@ export default function Profile() {
                     />
                   </div>
                   <div style={{ width: 140 }}>
-                    <label htmlFor="experience_years" style={pageStyles.labelSmall}>📅 سال‌های تجربه</label>
+                    <label htmlFor="experience_years" style={pageStyles.labelSmall}>سال‌های تجربه</label>
                     <input 
                       id="experience_years"
                       name="experience_years" 
@@ -1096,7 +1035,7 @@ export default function Profile() {
                   </div>
                 </div>
 
-                <label htmlFor="languages-input" style={pageStyles.label}>🌐 زبان‌های مسلط</label>
+                <label htmlFor="languages-input" style={pageStyles.label}><Globe2 size={14} aria-hidden="true" /> زبان‌های مسلط</label>
                 <TagInput 
                   id="languages-input" 
                   value={form.languages} 
@@ -1108,9 +1047,9 @@ export default function Profile() {
 
             {isClient && (
               <>
-                <div className="profile-section-title" style={pageStyles.sectionTitle}>🏢 اطلاعات شرکت</div>
+                <div className="profile-section-title" style={pageStyles.sectionTitle}><Building2 size={17} aria-hidden="true" /> اطلاعات شرکت</div>
                 
-                <label htmlFor="business-fields-input" style={pageStyles.label}>🏷️ زمینه‌های فعالیت</label>
+                <label htmlFor="business-fields-input" style={pageStyles.label}>زمینه‌های فعالیت</label>
                 <TagInput 
                   id="business-fields-input" 
                   value={form.business_fields} 
@@ -1118,9 +1057,9 @@ export default function Profile() {
                   placeholder="مثال: فناوری، بازاریابی، طراحی — Enter برای افزودن" 
                 />
 
-                <div style={pageStyles.rowTwo}>
+                <div className="profile-row-two" style={pageStyles.rowTwo}>
                   <div style={{ flex: 1 }}>
-                    <label htmlFor="company-size" style={pageStyles.labelSmall}>📏 اندازه شرکت</label>
+                    <label htmlFor="company-size" style={pageStyles.labelSmall}>اندازه شرکت</label>
                     <SelectInput
                       id="company-size"
                       name="company_size"
@@ -1135,7 +1074,7 @@ export default function Profile() {
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label htmlFor="website" style={pageStyles.labelSmall}>🌐 وبسایت شرکت</label>
+                    <label htmlFor="website" style={pageStyles.labelSmall}><Globe2 size={14} aria-hidden="true" /> وب‌سایت شرکت</label>
                     <input 
                       id="website"
                       name="website" 
@@ -1147,7 +1086,7 @@ export default function Profile() {
                   </div>
                 </div>
 
-                <label htmlFor="company-description" style={pageStyles.label}>📋 درباره شرکت</label>
+                <label htmlFor="company-description" style={pageStyles.label}>درباره شرکت</label>
                 <textarea 
                   id="company-description"
                   name="company_description" 
@@ -1161,7 +1100,7 @@ export default function Profile() {
             )}
 
             <div style={pageStyles.actions}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between" }}>
+              <div className="profile-actions-row" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between" }}>
                 <button 
                   type="submit" 
                   disabled={saving} 
@@ -1170,10 +1109,12 @@ export default function Profile() {
                     ...(saving && pageStyles.primaryBtnDisabled)
                   }}
                 >
-                  {saving ? "💾 درحال ذخیره..." : "💾 ذخیره تغییرات"}
+                  {saving ? <><LoaderCircle size={16} className="profile-saving-icon" aria-hidden="true" /> در حال ذخیره...</> : <><Save size={16} aria-hidden="true" /> ذخیره تغییرات</>}
                 </button>
                 {message && (
                   <div
+                    role={messageType === "success" ? "status" : "alert"}
+                    aria-live={messageType === "success" ? "polite" : "assertive"}
                     style={{
                       ...pageStyles.message,
                       background: messageType === "success" ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)",
@@ -1181,7 +1122,7 @@ export default function Profile() {
                       color: messageType === "success" ? "#10b981" : "#ef4444",
                     }}
                   >
-                    {messageType === "success" ? "✅ " : "❌ "}{message}
+                    {messageType === "success" ? <Check size={15} aria-hidden="true" /> : <X size={15} aria-hidden="true" />}{message}
                   </div>
                 )}
               </div>
@@ -1190,8 +1131,87 @@ export default function Profile() {
         </div>
       </form>
 
+      <section className="profile-reviews-card" aria-labelledby="profile-reviews-title">
+        <div className="profile-reviews-header">
+          <div className="profile-reviews-heading">
+            <h3 id="profile-reviews-title"><Star size={17} aria-hidden="true" /> نظرات و امتیازها</h3>
+            <span>بازخورد پروژه‌های انجام‌شده</span>
+          </div>
+          {averageRating > 0 && (
+            <div className="profile-rating-summary" aria-label={`میانگین امتیاز ${averageRating} از ۵ بر اساس ${reviews.length} نظر`}>
+              <span className="profile-rating-score">{averageRating}</span>
+              <div className="profile-rating-stars" aria-hidden="true">{renderStars(Math.round(averageRating))}</div>
+              <span className="profile-rating-count">از {reviews.length} نظر</span>
+            </div>
+          )}
+        </div>
+
+        {loadingReviews ? (
+          <div className="profile-reviews-state" role="status">
+            <LoaderCircle size={18} className="profile-saving-icon" aria-hidden="true" />
+            در حال بارگذاری نظرات...
+          </div>
+        ) : reviews.length === 0 ? (
+          <div className="profile-reviews-state profile-reviews-empty">
+            <div className="profile-empty-reviews-icon"><Star size={22} aria-hidden="true" /></div>
+            <strong>هنوز نظری ثبت نشده است</strong>
+            <span>بعد از انجام پروژه‌ها، امتیاز و نظر کارفرما در این بخش نمایش داده می‌شود.</span>
+          </div>
+        ) : (
+          <div className="profile-reviews-list">
+            {reviews.map((review, idx) => {
+              const reviewerName = extractUserName(review);
+              const userType = extractUserType(review);
+              const avatarSrc = extractUserAvatar(review);
+
+              return (
+                <article key={review.id || idx} className="profile-review-item">
+                  <div className="profile-review-header">
+                    <div className="profile-reviewer">
+                      <img
+                        className="profile-reviewer-avatar"
+                        src={avatarSrc || placeholderSvg}
+                        alt={`تصویر ${reviewerName}`}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = placeholderSvg;
+                        }}
+                      />
+                      <div className="profile-reviewer-copy">
+                        <div className="profile-reviewer-name">
+                          <span>{reviewerName}</span>
+                          <span className="profile-reviewer-role">{userType}</span>
+                        </div>
+                        <div className="profile-review-date">{formatDateIran(review.created_at)}</div>
+                      </div>
+                    </div>
+                    <div className="profile-review-stars" aria-label={`امتیاز ${review.rating} از ۵`}>
+                      {renderStars(review.rating)}
+                    </div>
+                  </div>
+                  {review.review && <p className="profile-review-text">{review.review}</p>}
+                  <div className="profile-review-project">
+                    <div className="profile-review-project-title">
+                      <span>پروژه</span>
+                      <strong>{review.project_title || `پروژه #${review.project}`}</strong>
+                    </div>
+                    {review.project_budget && (
+                      <div className="profile-review-project-budget">
+                        <span>بودجه</span>
+                        <strong>{review.project_budget}</strong>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       {cropOpen && cropImageUrl && (
         <div
+          className="profile-crop-overlay"
           style={{
             position: "fixed",
             inset: 0,
@@ -1204,8 +1224,8 @@ export default function Profile() {
             backdropFilter: "blur(8px)",
           }}
         >
-          <div style={{ width: "100%", maxWidth: 920, display: "flex", gap: 24, alignItems: "flex-start" }}>
-            <div style={{ background: "#0f172a", padding: 20, borderRadius: 16, flex: "0 0 auto", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div className="profile-crop-dialog" style={{ width: "100%", maxWidth: 920, display: "flex", gap: 24, alignItems: "flex-start" }}>
+            <div className="profile-crop-preview-panel" style={{ background: "#0f172a", padding: 20, borderRadius: 16, flex: "0 0 auto", border: "1px solid rgba(255,255,255,0.1)" }}>
               <div
                 style={{
                   width: CROP_BOX,
@@ -1342,9 +1362,9 @@ export default function Profile() {
         } 
         .animate-fade-in-up { animation: fade-in-up 0.8s ease-out; }
         
-        input:focus, textarea:focus, select:focus {
-          border-color: #3b82f6 !important;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+        .profile-page input:focus, .profile-page textarea:focus, .profile-page select:focus {
+          border-color: var(--forest) !important;
+          box-shadow: 0 0 0 3px rgb(35 107 83 / 12%) !important;
         }
       `}</style>
     </div>

@@ -7,6 +7,7 @@ from .views_dashboard import (
     ProjectStatsView,
     PortfolioLimitedView,
     RecentActivityView,
+    EmployerProjectsView,
 )
 from .views import (
     ProjectListCreateView,
@@ -31,6 +32,7 @@ from .views import (
 urlpatterns = [
     path("projects/", ProjectListCreateView.as_view()),
     path("projects/", ProjectListCreateView.as_view(), name="project-list"),
+    path("projects/mine/", EmployerProjectsView.as_view(), name="employer-project-list"),
     path("projects/<int:pk>/", ProjectDetailView.as_view()),
     path('dashboard/', dashboard_view, name='dashboard'),
     path("projects/create/", views.project_create_view, name="project-create"),

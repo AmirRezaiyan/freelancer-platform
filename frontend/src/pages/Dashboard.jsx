@@ -9,7 +9,7 @@ import DashboardOverview from "./DashboardOverview";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
 import { markAllProjectMessagesRead } from "../api/messageState";
-import { entityId, mapDashboardMetrics, ownedProjects, pageResults } from "../utils/dashboardData";
+import { entityId, mapDashboardMetrics, pageResults } from "../utils/dashboardData";
 
 export default function Dashboard() {
   const { user, loading, logout } = useContext(AuthContext);
@@ -287,7 +287,7 @@ export default function Dashboard() {
                 <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "16px 0" }} />
 
                 <button
-                  onClick={() => { logout(); navigate('/login'); }}
+                  onClick={() => { logout(); navigate('/', { replace: true }); }}
                   style={{
                     width: "100%",
                     padding: 14,
@@ -375,7 +375,7 @@ export default function Dashboard() {
               ))}
 
               <button
-                onClick={() => { logout(); navigate('/login'); }}
+                onClick={() => { logout(); navigate('/', { replace: true }); }}
                 className="hover-lift"
                 style={{
                   display: "flex",
@@ -429,16 +429,21 @@ function DashboardHome({ user }) {
   const [loading, setLoading] = useState(true);
   const [dashboardMetrics, setDashboardMetrics] = useState({});
   const [dashboardError, setDashboardError] = useState(null);
+  const [dashboardRefresh, setDashboardRefresh] = useState(0);
   const [activityError, setActivityError] = useState(null);
   const [recentProjects, setRecentProjects] = useState([]);
+  const [openProjects, setOpenProjects] = useState([]);
+  const [discoveryError, setDiscoveryError] = useState(null);
   const [projectProposals, setProjectProposals] = useState([]);
   const [freelancerProposals, setFreelancerProposals] = useState([]);
   const [projectLoading, setProjectLoading] = useState(true);
   const [projectError, setProjectError] = useState(null);
   const [proposalError, setProposalError] = useState(null);
+  const [listRefresh, setListRefresh] = useState(0);
 
   const [portfolios, setPortfolios] = useState([]);
-  const [portLoading, setPortLoading] = useState(false);
+  const [portLoading, setPortLoading] = useState(true);
+  const [portfolioError, setPortfolioError] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [fileInputKey, setFileInputKey] = useState(Date.now());
@@ -470,6 +475,7 @@ function DashboardHome({ user }) {
         setLoading(true);
         setDashboardError(null);
         setActivityError(null);
+        if (isFreelancer) loadPortfolios();
         const requests = [
           api.get("/market/dashboard/").catch(() => null),
           isFreelancer ? api.get("/market/proposals/stats/").catch(() => null) : Promise.resolve(null),
@@ -537,7 +543,6 @@ function DashboardHome({ user }) {
 
         if (!cancelled) {
           setStats(newStats);
-          if (isFreelancer) loadPortfolios();
         }
       } catch (err) {
         console.error("Dashboard fetch error:", err?.response?.status);
@@ -548,7 +553,7 @@ function DashboardHome({ user }) {
     };
     fetchDashboardStats();
     return () => { cancelled = true; };
-  }, [user, isClient, isFreelancer, normalizedUser?.user_type]);
+  }, [user, isClient, isFreelancer, normalizedUser?.user_type, dashboardRefresh]);
 
   useEffect(() => {
     if (!normalizedUser?.id) return undefined;
@@ -559,13 +564,16 @@ function DashboardHome({ user }) {
       setProjectLoading(true);
       setProjectError(null);
       setProposalError(null);
+      setDiscoveryError(null);
       try {
         if (isClient) {
-          const response = await api.get("/market/projects/", {
+          const response = await api.get("/market/projects/mine/", {
             params: { page: 1, page_size: 50 },
             signal: controller.signal,
           });
-          const clientProjects = ownedProjects(response.data, normalizedUser.id).slice(0, 4);
+          const projectRecords = Array.isArray(response.data) ? response.data : response.data?.results;
+          if (!Array.isArray(projectRecords)) throw new Error("Invalid employer project response");
+          const clientProjects = projectRecords.slice(0, 4);
           if (!active) return;
           setRecentProjects(clientProjects);
 
@@ -575,11 +583,15 @@ function DashboardHome({ user }) {
                 params: { page: 1 },
                 signal: controller.signal,
               });
-              const records = pageResults(proposalResponse.data);
+              const proposalData = proposalResponse.data;
+              const records = Array.isArray(proposalData) ? proposalData : proposalData?.results;
+              if (!Array.isArray(records)) {
+                return { projectId: project.id, projectTitle: project.title, count: null, latest: null, failed: true };
+              }
               return {
                 projectId: project.id,
                 projectTitle: project.title,
-                count: proposalResponse.data?.count ?? records.length,
+                count: proposalData?.count ?? records.length,
                 latest: records[0] || null,
               };
             } catch (error) {
@@ -594,23 +606,51 @@ function DashboardHome({ user }) {
             }
           }
         } else if (isFreelancer) {
-          const response = await api.get("/market/proposals/mine/", {
-            params: { page: 1, page_size: 4 },
-            signal: controller.signal,
-          });
-          const records = pageResults(response.data).slice(0, 4);
-          const enriched = await Promise.all(records.map(async (proposal) => {
-            const projectId = entityId(proposal.project);
-            if (!projectId) return proposal;
-            try {
-              const projectResponse = await api.get(`/market/projects/${projectId}/`, { signal: controller.signal });
-              return { ...proposal, project_title: projectResponse.data?.title || `پروژه شماره ${projectId}` };
-            } catch (error) {
-              if (controller.signal.aborted) throw error;
-              return { ...proposal, project_title: `پروژه شماره ${projectId}` };
+          const [proposalResult, discoveryResult] = await Promise.allSettled([
+            api.get("/market/proposals/mine/", {
+              params: { page: 1, page_size: 4 },
+              signal: controller.signal,
+            }),
+            api.get("/market/projects/", {
+              params: { status: "open", page: 1, page_size: 3 },
+              signal: controller.signal,
+            }),
+          ]);
+
+          if (proposalResult.status === "fulfilled") {
+            const proposalData = proposalResult.value.data;
+            const proposalRecords = Array.isArray(proposalData) ? proposalData : proposalData?.results;
+            if (!Array.isArray(proposalRecords)) {
+              if (active) setProposalError("پاسخ پیشنهادها معتبر نیست.");
+            } else {
+              const enriched = await Promise.all(proposalRecords.slice(0, 4).map(async (proposal) => {
+                const projectId = entityId(proposal.project);
+                if (!projectId) return proposal;
+                try {
+                  const projectResponse = await api.get(`/market/projects/${projectId}/`, { signal: controller.signal });
+                  return { ...proposal, project_title: projectResponse.data?.title || `پروژه شماره ${projectId}` };
+                } catch (error) {
+                  if (controller.signal.aborted) throw error;
+                  return { ...proposal, project_title: `پروژه شماره ${projectId}` };
+                }
+              }));
+              if (active) setFreelancerProposals(enriched);
             }
-          }));
-          if (active) setFreelancerProposals(enriched);
+          } else if (!controller.signal.aborted && active) {
+            setProposalError("پیشنهادهای اخیر بارگذاری نشدند.");
+          }
+
+          if (discoveryResult.status === "fulfilled") {
+            const projectData = discoveryResult.value.data;
+            const projectRecords = Array.isArray(projectData) ? projectData : projectData?.results;
+            if (!Array.isArray(projectRecords)) {
+              if (active) setDiscoveryError("پاسخ پروژه‌های باز معتبر نیست.");
+            } else if (active) {
+              setOpenProjects(projectRecords.filter((project) => project.status === "open").slice(0, 3));
+            }
+          } else if (!controller.signal.aborted && active) {
+            setDiscoveryError("پروژه‌های باز بارگذاری نشدند.");
+          }
         }
       } catch {
         if (active && !controller.signal.aborted) {
@@ -627,7 +667,7 @@ function DashboardHome({ user }) {
       active = false;
       controller.abort();
     };
-  }, [isClient, isFreelancer, normalizedUser?.id]);
+  }, [isClient, isFreelancer, normalizedUser?.id, listRefresh]);
 
 
   useEffect(() => {
@@ -648,10 +688,11 @@ function DashboardHome({ user }) {
   async function loadPortfolios() {
     try {
       setPortLoading(true);
+      setPortfolioError(null);
       const data = await fetchAllPages("/market/portfolio/");
       setPortfolios(data);
-    } catch (err) {
-      console.error("load portfolios error", err?.response?.status);
+    } catch {
+      setPortfolioError("نمونه‌کارها بارگذاری نشدند.");
     } finally {
       setPortLoading(false);
     }
@@ -803,8 +844,16 @@ function DashboardHome({ user }) {
         projectProposals={projectProposals}
         proposals={freelancerProposals}
         proposalError={proposalError}
+        openProjects={openProjects}
+        discoveryLoading={projectLoading}
+        discoveryError={discoveryError}
+        onRetryDiscovery={() => setListRefresh((value) => value + 1)}
+        onRetryProposals={() => setListRefresh((value) => value + 1)}
+        onRetryDashboard={() => setDashboardRefresh((value) => value + 1)}
         portfolios={portfolios}
         portfolioLoading={portLoading}
+        portfolioError={portfolioError}
+        onRetryPortfolios={loadPortfolios}
         deletingId={deletingId}
         onAddPortfolio={openNewPortfolio}
         onEditPortfolio={openEditPortfolio}

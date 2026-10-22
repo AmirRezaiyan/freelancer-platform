@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
@@ -25,13 +25,8 @@ import {
   Shield,
   Building,
   Sparkles,
-  Home,
   Grid,
   Mail,
-  Settings,
-  LogOut,
-  Menu,
-  X as XIcon,
   Bell,
   Search
 } from "lucide-react";
@@ -409,135 +404,9 @@ const styles = {
 };
 
 
-const SidebarMenu = ({ isOpen, onClose, userData, navigate, logout }) => {
-  const menuItems = [
-    { icon: <Home size={18} />, label: "داشبورد", path: "/dashboard" },
-    { icon: <Grid size={18} />, label: "بازار پروژه‌ها", path: "/dashboard/projects" },
-    ...(userData?.user_type === "client" ? [] : [{ icon: <Briefcase size={18} />, label: "پیشنهادهای من", path: "/dashboard/proposals" }]),
-    { icon: <MessageSquare size={18} />, label: "پیام‌ها", path: "/dashboard/messages" },
-    { icon: <Settings size={18} />, label: "پروفایل", path: "/dashboard/profile" },
-    { icon: <LogOut size={18} />, label: "خروج", isLogout: true }
-  ];
-
-  if (!isOpen) return null;
-
-  return (
-    <>
-      <div style={styles.sidebarOverlay} onClick={onClose} />
-      <div style={styles.sidebar}>
-        <div style={styles.sidebarHeader}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{
-              width: "36px",
-              height: "36px",
-              borderRadius: "8px",
-              background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            }}>
-              <Briefcase size={18} color="#ffffff" />
-            </div>
-            <div>
-              <h3 style={{ fontSize: "14px", fontWeight: "700", color: "#ffffff", margin: 0 }}>
-                MyMarket
-              </h3>
-              <p style={{ fontSize: "11px", color: "#94a3b8", margin: "3px 0 0 0" }}>
-                پنل مدیریت
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#94a3b8",
-              cursor: "pointer",
-              padding: "5px",
-              borderRadius: "5px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.color = "#ffffff";
-              e.target.style.background = "rgba(100, 116, 139, 0.2)";
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.color = "#94a3b8";
-              e.target.style.background = "none";
-            }}
-          >
-            <XIcon size={18} />
-          </button>
-        </div>
-
-        {userData && (
-          <div style={styles.userInfo}>
-            <div style={styles.userAvatar}>
-              {userData.first_name?.[0] || userData.username?.[0] || "U"}
-            </div>
-            <div style={{ flex: 1 }}>
-              <h4 style={{ fontSize: "13px", fontWeight: "600", color: "#ffffff", margin: "0 0 3px 0" }}>
-                {userData.first_name && userData.last_name
-                  ? `${userData.first_name} ${userData.last_name}`
-                  : userData.username || "کاربر"}
-              </h4>
-              <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>
-                {userData.user_type === 'freelancer' ? 'فریلنسر' : 'کارفرما'}
-              </p>
-            </div>
-          </div>
-        )}
-
-        <div style={styles.sidebarMenu}>
-          {menuItems.map((item) => item.isLogout ? (
-            <button
-              key="logout"
-              type="button"
-              className="project-detail-menu-item"
-              onClick={() => { logout(); navigate("/login", { replace: true }); }}
-            >
-              {item.icon}<span>{item.label}</span>
-            </button>
-          ) : (
-            <Link
-              key={item.path}
-              to={item.path}
-              className="project-detail-menu-item"
-              aria-current={window.location.pathname === item.path ? "page" : undefined}
-              onClick={onClose}
-            >
-              {item.icon}<span>{item.label}</span>
-            </Link>
-          ))}
-        </div>
-
-        <div style={{
-          padding: "16px",
-          borderTop: "1px solid rgba(100, 116, 139, 0.2)",
-          marginTop: "auto"
-        }}>
-          <div style={{
-            fontSize: "11px",
-            color: "#64748b",
-            textAlign: "center"
-          }}>
-            نسخه ۱.۰.۰
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
-
 export default function ProjectDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { logout } = useContext(AuthContext);
 
   const [project, setProject] = useState(null);
   const [proposals, setProposals] = useState([]);
@@ -558,7 +427,6 @@ export default function ProjectDetails() {
   const [userData, setUserData] = useState(null);
   const [isProjectOwner, setIsProjectOwner] = useState(false);
   const [clientInfo, setClientInfo] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const resolveEntityId = (entity) => {
     if (!entity && entity !== 0) return null;
@@ -1236,11 +1104,6 @@ export default function ProjectDetails() {
           box-sizing: border-box;
         }
         
-        body {
-          margin: 0;
-          overflow: hidden;
-        }
-        
         ::-webkit-scrollbar {
           width: 5px;
         }
@@ -1258,14 +1121,6 @@ export default function ProjectDetails() {
           background: rgba(100, 116, 139, 0.7);
         }
       `}</style>
-
-      <SidebarMenu
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        userData={userData}
-        navigate={navigate}
-        logout={logout}
-      />
 
       <div className="project-details-banner" style={{
         position: "relative",
@@ -1314,15 +1169,6 @@ export default function ProjectDetails() {
             </button>
 
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                style={styles.hamburgerButton}
-                onMouseEnter={(e) => e.target.style.background = "rgba(255, 255, 255, 0.2)"}
-                onMouseLeave={(e) => e.target.style.background = "rgba(255, 255, 255, 0.1)"}
-              >
-                {sidebarOpen ? <XIcon size={18} /> : <Menu size={18} />}
-              </button>
-
               <button
                 onClick={() => navigate("/dashboard/messages")}
                 style={{
@@ -1987,50 +1833,22 @@ export default function ProjectDetails() {
                   </div>
                 </div>
 
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}>
+                {isProjectOwner && project.status === "open" && proposals.some((proposal) => proposal.status === "pending") && (
                   <div style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: "4px"
+                    gap: "4px",
+                    background: "rgba(5, 150, 105, 0.1)",
+                    padding: "5px 8px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(5, 150, 105, 0.2)"
                   }}>
-                    <div style={{
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "50%",
-                      backgroundColor: "#10b981"
-                    }}></div>
-                    <span style={{
-                      fontSize: "11px",
-                      color: "#94a3b8"
-                    }}>
-                      قبول شده
+                    <Shield size={10} color="#34d399" />
+                    <span style={{ fontSize: "10px", color: "#246144", fontWeight: "500" }}>
+                      پیشنهادهای در انتظار بررسی را مرور کنید
                     </span>
                   </div>
-                  {isProjectOwner && (
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      background: "rgba(5, 150, 105, 0.1)",
-                      padding: "5px 8px",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(5, 150, 105, 0.2)"
-                    }}>
-                      <Shield size={10} color="#34d399" />
-                      <span style={{
-                        fontSize: "10px",
-                        color: "#34d399",
-                        fontWeight: "500"
-                      }}>
-                        شما می‌توانید پیشنهادها را قبول کنید
-                      </span>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 

@@ -14,8 +14,7 @@ export function mapDashboardMetrics(userType, response, proposalStats = {}) {
     return {
       proposalsSent: numberOrNull(counts.proposals_sent),
       pendingProposals: numberOrNull(proposalStats.pending),
-      activeContracts: numberOrNull(counts.active_contracts),
-      acceptedProposalValue: numberOrNull(counts.earnings),
+      acceptedProposals: numberOrNull(proposalStats.accepted),
     };
   }
 
@@ -26,11 +25,6 @@ export function pageResults(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.results)) return response.results;
   return [];
-}
-
-export function ownedProjects(response, userId) {
-  if (userId == null) return [];
-  return pageResults(response).filter((project) => String(entityId(project.client)) === String(userId));
 }
 
 export function entityId(entity) {

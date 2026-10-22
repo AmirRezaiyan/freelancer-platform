@@ -219,7 +219,9 @@ export default function ProjectEdit() {
         </h2>
         
         {message && (
-          <div style={{
+          <div
+            role={message.type === "error" ? "alert" : "status"}
+            style={{
             marginBottom: "20px",
             padding: "14px 16px",
             borderRadius: "8px",
@@ -234,7 +236,7 @@ export default function ProjectEdit() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ direction: "rtl" }}>
+        <form onSubmit={handleSubmit} style={{ direction: "rtl" }} noValidate>
           <div style={{ marginBottom: "20px" }}>
             <label htmlFor="edit-project-title" style={{
               display: "block",
@@ -271,7 +273,11 @@ export default function ProjectEdit() {
               }}
               onFocus={e => e.target.style.borderColor = formErrors.title ? "#ef4444" : "#3b82f6"}
               onBlur={e => e.target.style.borderColor = formErrors.title ? "#ef4444" : "#374151"}
+              required
+              aria-invalid={Boolean(formErrors.title)}
+              aria-describedby={formErrors.title ? "edit-project-title-error" : undefined}
             />
+            {formErrors.title && <span id="edit-project-title-error" className="project-form-error">{formErrors.title}</span>}
             {formErrors.title && (
               <div style={{
                 color: "#ef4444",
@@ -323,7 +329,11 @@ export default function ProjectEdit() {
               }}
               onFocus={e => e.target.style.borderColor = formErrors.description ? "#ef4444" : "#3b82f6"}
               onBlur={e => e.target.style.borderColor = formErrors.description ? "#ef4444" : "#374151"}
+              required
+              aria-invalid={Boolean(formErrors.description)}
+              aria-describedby={formErrors.description ? "edit-project-description-error" : undefined}
             />
+            {formErrors.description && <span id="edit-project-description-error" className="project-form-error">{formErrors.description}</span>}
             {formErrors.description && (
               <div style={{
                 color: "#ef4444",
@@ -385,7 +395,11 @@ export default function ProjectEdit() {
                 }}
                 onFocus={e => e.target.style.borderColor = formErrors.budget_min ? "#ef4444" : "#3b82f6"}
                 onBlur={e => e.target.style.borderColor = formErrors.budget_min ? "#ef4444" : "#374151"}
+                required
+                aria-invalid={Boolean(formErrors.budget_min)}
+                aria-describedby={formErrors.budget_min ? "edit-project-budget-min-error" : undefined}
               />
+              {formErrors.budget_min && <span id="edit-project-budget-min-error" className="project-form-error">{formErrors.budget_min}</span>}
               {formErrors.budget_min && (
                 <div style={{
                   color: "#ef4444",
@@ -441,7 +455,11 @@ export default function ProjectEdit() {
                 }}
                 onFocus={e => e.target.style.borderColor = formErrors.budget_max ? "#ef4444" : "#3b82f6"}
                 onBlur={e => e.target.style.borderColor = formErrors.budget_max ? "#ef4444" : "#374151"}
+                required
+                aria-invalid={Boolean(formErrors.budget_max)}
+                aria-describedby={formErrors.budget_max ? "edit-project-budget-max-error" : undefined}
               />
+              {formErrors.budget_max && <span id="edit-project-budget-max-error" className="project-form-error">{formErrors.budget_max}</span>}
               {formErrors.budget_max && (
                 <div style={{
                   color: "#ef4444",

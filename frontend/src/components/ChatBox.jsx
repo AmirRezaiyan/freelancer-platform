@@ -613,6 +613,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   const [file, setFile] = useState(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [messageError, setMessageError] = useState(null);
+  const [sendError, setSendError] = useState(null);
   const [olderPage, setOlderPage] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
@@ -850,7 +852,10 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
 
   const loadMessages = async (withLoading = true) => {
     if (!projectId) return;
-    if (withLoading) setLoading(true);
+    if (withLoading) {
+      setLoading(true);
+      setMessageError(null);
+    }
     try {
       const res = await MessagesAPI.list(projectId, 1);
       const data = Array.isArray(res) ? res : res?.results ?? res?.data ?? res;
@@ -858,6 +863,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       const mapped = (data || []).map(mapMessage).filter(Boolean);
 
       if (mountedRef.current) {
+        setMessageError(null);
         setMessages((prev) => {
           const prevFiltered = (prev || []).filter((m) => {
             if (!m) return false;
@@ -892,6 +898,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       if (err?.response?.status === 403 || err?.response?.status === 401) {
         if (mountedRef.current) setMessages([]);
       }
+      if (mountedRef.current) setMessageError("بارگذاری پیام‌ها انجام نشد. دوباره تلاش کنید.");
     } finally {
       if (withLoading) setLoading(false);
     }
@@ -961,6 +968,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     if ((!text.trim() && !file) || !projectId) return;
 
     setSending(true);
+    setSendError(null);
     try {
       const res = await MessagesAPI.send(projectId, text.trim(), file);
       const serverMsg = res?.data ?? res;
@@ -984,14 +992,18 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     } catch (err) {
       console.error("send message", err?.response?.status);
       const status = err?.response?.status;
-      if (status === 403) {
-        alert("ارسال پیام قبل از استخدام مجاز نیست.");
-      } else {
-        const detail = err?.response?.data?.detail || err?.response?.data || err.message;
-        alert(detail || "ارسال پیام موفق نبود.");
-      }
+      setSendError(status === 403
+        ? "ارسال پیام در این گفتگو مجاز نیست."
+        : "ارسال پیام انجام نشد. متن را نگه داشتیم؛ دوباره تلاش کنید.");
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleComposerKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send(event);
     }
   };
 
@@ -1127,6 +1139,12 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           <button onClick={loadOlderMessages} disabled={loadingOlder} style={{ alignSelf: "center" }}>
             {loadingOlder ? "در حال بارگذاری پیام‌های قبلی..." : "بارگذاری پیام‌های قبلی"}
           </button>
+        )}
+        {messageError && (
+          <div className="chat-message-error" role="alert">
+            <span>{messageError}</span>
+            <button type="button" onClick={() => loadMessages(true)}>تلاش دوباره</button>
+          </div>
         )}
         {loading ? (
           <div style={styles.centerMsg}>در حال بارگذاری پیام‌ها...</div>
@@ -1319,6 +1337,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
         </div>
       )}
 
+      {sendError && <div className="chat-send-error" role="alert">{sendError}</div>}
       <form className="chat-composer" onSubmit={send} style={styles.inputArea}>
         <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: "none" }} />
 
@@ -1339,11 +1358,13 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           <Smile size={20} />
         </button>
 
-        <input
+        <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          style={{ ...styles.input, direction: "rtl", textAlign: "right", minWidth: 0 }}
+          onKeyDown={handleComposerKeyDown}
+          style={{ ...styles.input, direction: "rtl", textAlign: "right", minWidth: 0, minHeight: 42, maxHeight: 120, resize: "vertical" }}
           placeholder="پیام خود را بنویسید..."
+          aria-label="پیام خود را بنویسید"
           disabled={sending || loading}
           dir="rtl"
         />

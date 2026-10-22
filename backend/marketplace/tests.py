@@ -242,6 +242,33 @@ class MarketplaceAuthorizationAPITests(TestCase):
 		self.assertEqual(self.api.get("/api/market/projects/?page=invalid").status_code, 404)
 		self.assertEqual(self.api.get("/api/market/projects/?page=99").status_code, 404)
 
+	def test_employer_project_list_requires_authentication_and_scopes_by_owner(self):
+		owned_project = self.create_project(title="Second owned project")
+		owned_project.status = "completed"
+		owned_project.save(update_fields=["status"])
+		foreign_project = self.create_project(client=self.other_client, title="Foreign project")
+		self.assertEqual(self.api.get("/api/market/projects/mine/").status_code, 401)
+
+		self.api.force_authenticate(user=self.client_user)
+		client_response = self.api.get("/api/market/projects/mine/")
+		self.assertEqual(client_response.status_code, 200)
+		self.assertEqual(
+			{item["id"] for item in client_response.data["results"]},
+			{self.project.id, owned_project.id},
+		)
+		self.assertNotIn(foreign_project.id, {item["id"] for item in client_response.data["results"]})
+		open_response = self.api.get("/api/market/projects/mine/?status=open")
+		self.assertEqual(open_response.data["count"], 1)
+		self.assertEqual(open_response.data["results"][0]["id"], self.project.id)
+		search_response = self.api.get("/api/market/projects/mine/?q=Second%20owned")
+		self.assertEqual(search_response.data["count"], 1)
+		self.assertEqual(search_response.data["results"][0]["id"], owned_project.id)
+
+		self.api.force_authenticate(user=self.freelancer)
+		freelancer_response = self.api.get("/api/market/projects/mine/")
+		self.assertEqual(freelancer_response.status_code, 200)
+		self.assertEqual(freelancer_response.data["count"], 0)
+
 	def test_project_list_proposal_annotations_prevent_per_project_queries(self):
 		projects = [self.project]
 		for index in range(5):

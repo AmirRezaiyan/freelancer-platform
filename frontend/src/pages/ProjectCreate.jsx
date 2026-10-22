@@ -1,6 +1,25 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowRight, BriefcaseBusiness, CheckCircle2, CodeXml, Layers, LoaderCircle, Palette, Smartphone, X } from "lucide-react";
 import api from "../api/axios";
+
+const categories = [
+  { value: "web", label: "توسعه وب", icon: CodeXml },
+  { value: "mobile", label: "توسعه موبایل", icon: Smartphone },
+  { value: "design", label: "طراحی", icon: Palette },
+  { value: "other", label: "سایر", icon: Layers },
+];
+
+const skillSuggestions = [
+  "React", "JavaScript", "Python", "Django", "Node.js",
+  "UI/UX", "Mobile", "Web Design", "Backend", "Frontend",
+  "DevOps", "Machine Learning", "Database", "API", "Graphic Design",
+];
+
+const toAsciiDigits = (value) => value.replace(/[۰-۹٠-٩]/g, (digit) => {
+  const code = digit.charCodeAt(0);
+  return String(code >= 0x06f0 ? code - 0x06f0 : code - 0x0660);
+});
 
 export default function ProjectCreate() {
   const navigate = useNavigate();
@@ -9,76 +28,107 @@ export default function ProjectCreate() {
     description: "",
     budget_min: "",
     budget_max: "",
-    skills: "",
     category: "web"
   });
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState(null);
-  const [categories] = useState([
-    { value: "web", label: "توسعه وب", icon: "🌐" },
-    { value: "mobile", label: "توسعه موبایل", icon: "📱" },
-    { value: "design", label: "طراحی", icon: "🎨" },
-    { value: "other", label: "سایر", icon: "📦" }
-  ]);
-
-  const [skillSuggestions] = useState([
-    "React", "JavaScript", "Python", "Django", "Node.js",
-    "UI/UX", "Mobile", "Web Design", "Backend", "Frontend",
-    "DevOps", "Machine Learning", "Database", "API", "Graphic Design"
-  ]);
-
   const [selectedSkills, setSelectedSkills] = useState([]);
+  const [skillInput, setSkillInput] = useState("");
   const [success, setSuccess] = useState(null);
+  const errorLabels = {
+    general: "خطا",
+    title: "عنوان پروژه",
+    description: "توضیحات پروژه",
+    budget_min: "حداقل بودجه",
+    budget_max: "حداکثر بودجه",
+    category: "دسته‌بندی",
+    skills: "مهارت‌ها",
+  };
 
   const onChange = (e) => {
     const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
+    setForm((current) => ({ ...current, [name]: value }));
 
-    if (errors && errors[name]) {
-      const newErrors = { ...errors };
-      delete newErrors[name];
-      setErrors(newErrors);
-    }
+    setErrors((current) => {
+      if (!current?.[name]) return current;
+      const next = { ...current };
+      delete next[name];
+      return Object.keys(next).length ? next : null;
+    });
   };
 
-  const handleSkillSelect = (skill) => {
-    if (!selectedSkills.includes(skill) && selectedSkills.length < 8) {
-      setSelectedSkills([...selectedSkills, skill]);
-      setForm({
-        ...form,
-        skills: [...selectedSkills, skill].join(", ")
-      });
-    }
+  const addSkills = (skills) => {
+    const candidates = skills.map((skill) => skill.trim()).filter(Boolean);
+    const existingNames = new Set(selectedSkills.map((skill) => skill.toLocaleLowerCase()));
+    const candidateNames = new Set();
+    const additions = candidates.filter((skill) => {
+      const normalizedName = skill.toLocaleLowerCase();
+      if (existingNames.has(normalizedName) || candidateNames.has(normalizedName)) return false;
+      candidateNames.add(normalizedName);
+      return true;
+    });
+    const acceptedSkills = additions.slice(0, Math.max(0, 8 - selectedSkills.length));
+    const exceededLimit = acceptedSkills.length < additions.length;
+    setSelectedSkills((current) => [...current, ...acceptedSkills]);
+    setErrors((current) => {
+      const next = { ...current };
+      if (exceededLimit) next.skills = "حداکثر ۸ مهارت انتخاب کنید.";
+      else delete next.skills;
+      return Object.keys(next).length ? next : null;
+    });
   };
+
+  const handleSkillSelect = (skill) => addSkills([skill]);
 
   const removeSkill = (skillToRemove) => {
-    const newSkills = selectedSkills.filter(skill => skill !== skillToRemove);
-    setSelectedSkills(newSkills);
-    setForm({
-      ...form,
-      skills: newSkills.join(", ")
+    setSelectedSkills((current) => current.filter((skill) => skill !== skillToRemove));
+    setErrors((current) => {
+      if (!current?.skills) return current;
+      const next = { ...current };
+      delete next.skills;
+      return Object.keys(next).length ? next : null;
     });
   };
 
   const handleSkillInput = (e) => {
     const value = e.target.value;
-    setForm({ ...form, skills: value });
+    const parts = value.split(",");
+    if (parts.length > 1) addSkills(parts.slice(0, -1));
+    setSkillInput(parts.at(-1));
+  };
 
-    const skillsArray = value.split(",").map(s => s.trim()).filter(Boolean);
-    setSelectedSkills(skillsArray);
+  const handleSkillKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (skillInput.trim()) {
+        addSkills([skillInput]);
+        setSkillInput("");
+      }
+    }
+    if (e.key === "Backspace" && !skillInput && selectedSkills.length) {
+      removeSkill(selectedSkills.at(-1));
+    }
   };
 
   const submit = async (e) => {
     e.preventDefault();
+    const validationErrors = {};
+    if (!form.title.trim()) validationErrors.title = "عنوان پروژه را وارد کنید.";
+    if (!form.description.trim()) validationErrors.description = "توضیحات پروژه را وارد کنید.";
     const budgetMin = Number(form.budget_min);
     const budgetMax = Number(form.budget_max);
     if (!Number.isInteger(budgetMin) || budgetMin < 1) {
-      setErrors({ budget_min: "حداقل بودجه باید عدد صحیح و مثبت باشد." });
-      return;
+      validationErrors.budget_min = "حداقل بودجه باید عدد صحیح و مثبت باشد.";
     }
-    if (!Number.isInteger(budgetMax) || budgetMax < 1 || budgetMax < budgetMin) {
-      setErrors({ budget_max: "حداکثر بودجه باید عدد صحیح و برابر یا بیشتر از حداقل بودجه باشد." });
+    if (!Number.isInteger(budgetMax) || budgetMax < 1 || (Number.isInteger(budgetMin) && budgetMax < budgetMin)) {
+      validationErrors.budget_max = "حداکثر بودجه باید عدد صحیح و برابر یا بیشتر از حداقل بودجه باشد.";
+    }
+    if (skillInput.trim()) validationErrors.skills = "برای ثبت مهارت، کلید Enter یا ویرگول را بزنید.";
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      setSuccess(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     setLoading(true);
@@ -89,16 +139,15 @@ export default function ProjectCreate() {
       const payload = {
         title: form.title.trim(),
         description: form.description.trim(),
-        budget_min: form.budget_min ? parseInt(form.budget_min.replace(/,/g, '')) : 0,
-        budget_max: form.budget_max ? parseInt(form.budget_max.replace(/,/g, '')) : 0,
+        budget_min: Number(form.budget_min),
+        budget_max: Number(form.budget_max),
         category: form.category, 
-        skills: selectedSkills.length > 0 ? selectedSkills :
-          form.skills ? form.skills.split(",").map(s => s.trim()).filter(Boolean) : [],
+        skills: selectedSkills,
       };
 
       await api.post("/market/projects/", payload);
 
-      setSuccess("✅ پروژه با موفقیت ایجاد شد!");
+      setSuccess("پروژه با موفقیت ایجاد شد.");
 
       setTimeout(() => {
         navigate("/dashboard/projects");
@@ -144,13 +193,20 @@ export default function ProjectCreate() {
 
   const formatNumber = (num) => {
     if (!num) return "";
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return new Intl.NumberFormat("fa-IR").format(Number(num));
   };
 
   const handleBudgetChange = (e) => {
     const { name, value } = e.target;
-    const numericValue = value.replace(/[^\d]/g, '');
-    setForm({ ...form, [name]: numericValue });
+    const numericValue = toAsciiDigits(value).replace(/[^\d]/g, "");
+    setForm((current) => ({ ...current, [name]: numericValue }));
+    setErrors((current) => {
+      if (!current?.budget_min && !current?.budget_max) return current;
+      const next = { ...current };
+      delete next.budget_min;
+      delete next.budget_max;
+      return Object.keys(next).length ? next : null;
+    });
   };
 
   const styles = {
@@ -589,56 +645,65 @@ export default function ProjectCreate() {
 
   return (
     <div className="project-create-page" style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.breadcrumb}>
+      <header className="project-create-header" style={styles.header}>
+        <div className="project-create-breadcrumb" style={styles.breadcrumb}>
           <button
+            type="button"
+            className="project-create-back"
             onClick={() => navigate("/dashboard/projects")}
             style={styles.breadcrumbButton}
           >
-            ← بازگشت به پروژه‌ها
+            <ArrowRight size={16} aria-hidden="true" />
+            بازگشت به پروژه‌ها
           </button>
           <span style={styles.breadcrumbSeparator}>/</span>
           <span style={styles.breadcrumbCurrent}>ساخت پروژه</span>
         </div>
 
-        <h1 style={styles.title}>ساخت پروژه</h1>
-        <p style={{ color: '#94a3b8', margin: 0 }}>
+        <h1 className="project-create-title" style={styles.title}>ساخت پروژه</h1>
+        <p className="project-create-lede" style={{ color: '#94a3b8', margin: 0 }}>
           جزئیات پروژه را ثبت کنید تا فریلنسرها بتوانند پیشنهاد ارسال کنند.
         </p>
-      </div>
+      </header>
 
-      <div style={styles.card}>
-        <div style={styles.cardHeader}>
-          <div style={styles.cardIcon}>🚀</div>
+      <section className="project-create-card" style={styles.card}>
+        <div className="project-create-card-header" style={styles.cardHeader}>
+          <div className="project-create-card-icon" style={styles.cardIcon}>
+            <BriefcaseBusiness size={21} aria-hidden="true" />
+          </div>
           <div>
-            <h2 style={styles.cardTitle}>جزئیات پروژه</h2>
-                <p style={styles.cardSubtitle}>
+            <h2 className="project-create-card-title" style={styles.cardTitle}>جزئیات پروژه</h2>
+            <p className="project-create-card-subtitle" style={styles.cardSubtitle}>
               اطلاعات پروژه را روشن و کامل ثبت کنید تا پیشنهادهای دقیق‌تری دریافت کنید.
             </p>
           </div>
         </div>
 
         {success && (
-          <div style={styles.successCard}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="project-create-success" style={styles.successCard} role="status">
+            <div className="project-create-message">
+              <CheckCircle2 size={18} aria-hidden="true" />
               <span>{success}</span>
               <button
+                type="button"
+                className="project-create-dismiss"
                 onClick={() => setSuccess(null)}
                 style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                aria-label="بستن پیام موفقیت"
               >
-                ✕
+                <X size={17} aria-hidden="true" />
               </button>
             </div>
           </div>
         )}
 
         {errors && (
-          <div style={styles.errorCard}>
+          <div className="project-create-errors" style={styles.errorCard} role="alert">
             <h4 style={styles.errorTitle}>لطفاً خطاهای زیر را اصلاح کنید:</h4>
             {Object.entries(errors).map(([field, message]) => (
               <div key={field} style={styles.errorItem}>
                 <span style={styles.errorField}>
-                  {field === 'general' ? 'خطا:' : `${field}:`}
+                  {`${errorLabels[field] || field}:`}
                 </span>
                 <span> {message}</span>
               </div>
@@ -646,8 +711,8 @@ export default function ProjectCreate() {
           </div>
         )}
 
-        <form onSubmit={submit} style={styles.form}>
-          <div style={styles.formGroup}>
+        <form className="project-create-form" onSubmit={submit} style={styles.form} noValidate>
+          <div className="project-create-field" style={styles.formGroup}>
             <label htmlFor="create-project-title" style={styles.label}>
               عنوان پروژه *
               <span style={styles.labelHint}>(حداکثر 255 کاراکتر)</span>
@@ -660,14 +725,17 @@ export default function ProjectCreate() {
               onChange={onChange}
               maxLength={255}
               style={styles.input}
+              aria-invalid={Boolean(errors?.title)}
+              aria-describedby={errors?.title ? "create-project-title-error" : undefined}
               required
             />
+            {errors?.title && <span id="create-project-title-error" className="project-form-error">{errors.title}</span>}
             <div style={styles.charCounter}>
-              {form.title.length}/255 کاراکتر
+              {form.title.length.toLocaleString("fa-IR")}/۲۵۵ کاراکتر
             </div>
           </div>
 
-          <div style={styles.formGroup}>
+          <div className="project-create-field" style={styles.formGroup}>
             <label htmlFor="create-project-description" style={styles.label}>
               توضیحات پروژه *
               <span style={styles.labelHint}>(شرح کامل و دقیق پروژه)</span>
@@ -680,50 +748,59 @@ export default function ProjectCreate() {
               onChange={onChange}
               rows={8}
               style={styles.textarea}
+              aria-invalid={Boolean(errors?.description)}
+              aria-describedby={errors?.description ? "create-project-description-error" : undefined}
               required
             />
+            {errors?.description && <span id="create-project-description-error" className="project-form-error">{errors.description}</span>}
             <div style={styles.textareaTips}>
-              <span style={styles.tip}>💡 شرح روشن، نیازها و خروجی مورد انتظار را مشخص می‌کند.</span>
+              <span className="project-create-tip" style={styles.tip}>شرح روشن، نیازها و خروجی مورد انتظار را مشخص می‌کند.</span>
             </div>
           </div>
 
-          <div style={styles.formGroup}>
+          <div className="project-create-field project-create-budget-field" style={styles.formGroup}>
             <label style={styles.label}>بودجه پروژه (تومان) *</label>
-            <div style={styles.budgetContainer}>
+            <div className="project-create-budget-grid" style={styles.budgetContainer}>
               <div style={styles.budgetInputGroup}>
                 <label htmlFor="create-project-budget-min" style={styles.budgetLabel}>حداقل بودجه *</label>
-                <div style={styles.currencyInput}>
+                <div className="project-create-currency-input" style={styles.currencyInput}>
                   <input
                     id="create-project-budget-min"
                     name="budget_min"
                     inputMode="numeric"
-                    placeholder="مثال: 1000000"
+                    placeholder="مثال: ۱٬۰۰۰٬۰۰۰"
                     value={formatNumber(form.budget_min)}
                     onChange={handleBudgetChange}
                     style={styles.budgetInput}
+                    aria-invalid={Boolean(errors?.budget_min)}
+                    aria-describedby={errors?.budget_min ? "create-project-budget-min-error" : undefined}
                     required
                   />
-                  <span style={styles.currency}>تومان</span>
+                  <span className="project-create-currency" style={styles.currency}>تومان</span>
                 </div>
+                {errors?.budget_min && <span id="create-project-budget-min-error" className="project-form-error">{errors.budget_min}</span>}
               </div>
 
               <div style={styles.budgetSeparator}>تا</div>
 
               <div style={styles.budgetInputGroup}>
                 <label htmlFor="create-project-budget-max" style={styles.budgetLabel}>حداکثر بودجه *</label>
-                <div style={styles.currencyInput}>
+                <div className="project-create-currency-input" style={styles.currencyInput}>
                   <input
                     id="create-project-budget-max"
                     name="budget_max"
                     inputMode="numeric"
-                    placeholder="مثال: 5000000"
+                    placeholder="مثال: ۵٬۰۰۰٬۰۰۰"
                     value={formatNumber(form.budget_max)}
                     onChange={handleBudgetChange}
                     style={styles.budgetInput}
+                    aria-invalid={Boolean(errors?.budget_max)}
+                    aria-describedby={errors?.budget_max ? "create-project-budget-max-error" : undefined}
                     required
                   />
-                  <span style={styles.currency}>تومان</span>
+                  <span className="project-create-currency" style={styles.currency}>تومان</span>
                 </div>
+                {errors?.budget_max && <span id="create-project-budget-max-error" className="project-form-error">{errors.budget_max}</span>}
               </div>
             </div>
             <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '5px' }}>
@@ -731,13 +808,16 @@ export default function ProjectCreate() {
             </div>
           </div>
 
-          <div style={styles.formGroup}>
+          <div className="project-create-field" style={styles.formGroup}>
             <div style={styles.label} id="project-category-label">دسته‌بندی پروژه *</div>
-            <div style={styles.categoryGrid} role="group" aria-labelledby="project-category-label">
-              {categories.map((category) => (
+            <div className="project-create-category-grid" style={styles.categoryGrid} role="group" aria-labelledby="project-category-label">
+              {categories.map((category) => {
+                const CategoryIcon = category.icon;
+                return (
                 <button
                   key={category.value}
                   type="button"
+                  className="project-create-category-option"
                   aria-pressed={form.category === category.value}
                   style={{
                     ...styles.categoryOption,
@@ -745,57 +825,62 @@ export default function ProjectCreate() {
                   }}
                   onClick={() => setForm((current) => ({ ...current, category: category.value }))}
                 >
-                  <div style={styles.categoryIcon}>{category.icon}</div>
+                  <CategoryIcon size={20} aria-hidden="true" />
                   <div style={styles.categoryLabel}>{category.label}</div>
                 </button>
-              ))}
-            </div>
-            <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '5px' }}>
-              انتخاب شده: {categories.find(c => c.value === form.category)?.label}
+                );
+              })}
             </div>
           </div>
 
-          <div style={styles.formGroup}>
+          <div className="project-create-field" style={styles.formGroup}>
             <label htmlFor="create-project-skills" style={styles.label}>
               مهارت‌های مورد نیاز
-              <span style={styles.labelHint}>(حداکثر ۸ مهارت، با کاما جدا کنید)</span>
+              <span style={styles.labelHint}>(حداکثر ۸ مهارت)</span>
             </label>
 
-            {selectedSkills.length > 0 && (
-              <div style={styles.selectedSkills}>
-                {selectedSkills.map((skill, index) => (
-                  <div key={index} style={styles.skillTag}>
-                    {skill}
+            <div className="project-create-skill-picker">
+              {selectedSkills.map((skill) => (
+                <span key={skill} className="project-create-skill-tag">
+                  {skill}
                     <button
                       type="button"
                       onClick={() => removeSkill(skill)}
-                      style={styles.removeSkillBtn}
+                      className="project-create-skill-remove"
+                      aria-label={`حذف مهارت ${skill}`}
                     >
-                      ×
+                      <X size={13} aria-hidden="true" />
                     </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                </span>
+              ))}
+              <input
+                id="create-project-skills"
+                placeholder="نام مهارت را وارد کنید و Enter بزنید"
+                value={skillInput}
+                onChange={handleSkillInput}
+                onKeyDown={handleSkillKeyDown}
+                onBlur={() => {
+                  if (skillInput.trim()) {
+                    addSkills([skillInput]);
+                    setSkillInput("");
+                  }
+                }}
+                aria-invalid={Boolean(errors?.skills)}
+                aria-describedby={errors?.skills ? "create-project-skills-error" : undefined}
+              />
+            </div>
+            {errors?.skills && <span id="create-project-skills-error" className="project-form-error">{errors.skills}</span>}
 
-            <input
-              id="create-project-skills"
-              name="skills"
-              placeholder="مثال: React, JavaScript, Python, Django"
-              value={form.skills}
-              onChange={handleSkillInput}
-              style={styles.input}
-            />
-
-            <div style={styles.skillSuggestions}>
-              <span style={styles.suggestionsLabel}>پیشنهادهای سریع:</span>
-              <div style={styles.suggestionTags}>
-                {skillSuggestions.map((skill, index) => (
+            <div className="project-create-suggestions" style={styles.skillSuggestions}>
+              <span style={styles.suggestionsLabel}>پیشنهادهای مهارت:</span>
+              <div className="project-create-suggestion-list" style={styles.suggestionTags}>
+                {skillSuggestions.map((skill) => (
                   <button
-                    key={index}
+                    key={skill}
                     type="button"
                     onClick={() => handleSkillSelect(skill)}
-                    disabled={selectedSkills.includes(skill)}
+                    disabled={selectedSkills.some((item) => item.toLocaleLowerCase() === skill.toLocaleLowerCase()) || selectedSkills.length >= 8}
+                    className="project-create-suggestion"
                     style={{
                       ...styles.suggestionTag,
                       opacity: selectedSkills.includes(skill) ? 0.5 : 1
@@ -808,7 +893,7 @@ export default function ProjectCreate() {
             </div>
           </div>
 
-          <div style={styles.actionButtons}>
+          <div className="project-create-actions" style={styles.actionButtons}>
             <button
               type="button"
               onClick={() => navigate("/dashboard/projects")}
@@ -828,23 +913,19 @@ export default function ProjectCreate() {
             >
               {loading ? (
                 <>
-                  <span style={{
-                    width: '16px',
-                    height: '16px',
-                    border: '2px solid #fff',
-                    borderTop: '2px solid transparent',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite'
-                  }}></span>
+                  <LoaderCircle className="project-create-spinner" size={17} aria-hidden="true" />
                   در حال ساخت پروژه...
                 </>
               ) : (
-                '🚀 ساخت پروژه'
+                <>
+                  <BriefcaseBusiness size={17} aria-hidden="true" />
+                  ساخت پروژه
+                </>
               )}
             </button>
           </div>
         </form>
-      </div>
+      </section>
 
       <style>{`
         @keyframes spin {

@@ -399,36 +399,23 @@ export default function Messages() {
     }
     
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
-            <div style={{ 
-              fontWeight: 700, 
-              fontSize: 14, 
-              overflow: "hidden", 
-              textOverflow: "ellipsis", 
-              whiteSpace: "nowrap",
-              color: "#e5e7eb"
-            }}>
+      <div className="messages-conversation-copy">
+        <div className="messages-conversation-heading">
+          <div className="messages-conversation-heading-main">
+            <div className="messages-conversation-title">
               {proj.title || counterpartyName}
             </div>
-            
-            {renderRoleBadge(counterpartyRole)}
-            
-            {renderStatusBadge(proj.status)}
+            <div className="messages-conversation-badges">
+              {renderRoleBadge(counterpartyRole)}
+              {renderStatusBadge(proj.status)}
+            </div>
           </div>
-          
-          <div style={{ 
-            color: "#9ca3af", 
-            fontSize: 10, 
-            flexShrink: 0,
-            fontWeight: 500
-          }}>
+          <time className="messages-conversation-time">
             { lastMessage?.created_at ? new Date(lastMessage.created_at).toLocaleTimeString("fa-IR", {hour: '2-digit', minute: '2-digit'}) : "" }
-          </div>
+          </time>
         </div>
-        
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+
+        <div className="messages-conversation-meta">
           <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
             <User size={12} color="#94a3b8" />
             <span style={{ fontSize: "12px", color: "#94a3b8" }}>
@@ -573,6 +560,7 @@ export default function Messages() {
               return (
                 <button
                   key={proj.id}
+                  className="messages-conversation-button"
                   type="button"
                   aria-current={isActive ? "true" : undefined}
                   onClick={() => openConversation(proj.id)}
