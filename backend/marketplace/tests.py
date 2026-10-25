@@ -211,6 +211,8 @@ class MarketplaceAuthorizationAPITests(TestCase):
 		self.assertEqual(len(response.data["results"]), 1)
 		self.assertEqual(response.data["results"][0]["id"], self.proposal.id)
 		self.assertEqual(response.data["results"][0]["status"], "pending")
+		self.assertEqual(response.data["results"][0]["project_title"], self.project.title)
+		self.assertEqual(response.data["results"][0]["project_status"], "open")
 		self.assertNotEqual(response.data["results"][0]["message"], "Other freelancer confidential proposal")
 
 	def test_project_list_is_paginated_ordered_filtered_and_bounded(self):

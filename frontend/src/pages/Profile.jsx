@@ -888,7 +888,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="profile-page" style={pageStyles.container}>
+    <div className="profile-page" data-user-type={u?.user_type} style={pageStyles.container}>
       <div className="profile-page-header" style={pageStyles.header}>
         <div className="profile-heading-copy">
           <span>حساب کاربری</span>

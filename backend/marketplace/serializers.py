@@ -223,6 +223,9 @@ class ProjectCreateSerializer(ProjectBudgetValidationMixin, serializers.ModelSer
         return super().create(validated_data)
 
 class ProposalSerializer(serializers.ModelSerializer):
+    project_title = serializers.CharField(source="project.title", read_only=True)
+    project_status = serializers.CharField(source="project.status", read_only=True)
+
     class Meta:
         model = Proposal
         fields = "__all__"

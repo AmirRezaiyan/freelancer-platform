@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
-import { formatProjectCategory } from "../utils/formatters";
+import { formatCurrencyToToman, formatDateIran, formatProjectCategory } from "../utils/formatters";
 import { buildProposalPayload, validateProposalBid } from "../utils/proposalPayload";
 import ResilientImage from "../components/ResilientImage";
 import { AuthContext } from "../context/auth-context";
@@ -420,6 +420,8 @@ export default function ProjectDetails() {
   const [showApplyForm, setShowApplyForm] = useState(false);
   const [form, setForm] = useState({ cover_letter: "", bid: "" });
   const [error, setError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [success, setSuccess] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
   const [isHovered, setIsHovered] = useState({});
@@ -470,7 +472,7 @@ export default function ProjectDetails() {
     const loadProjectData = async () => {
       try {
         setLoading(true);
-        setError(null);
+        setLoadError(null);
 
         const projectRes = await api.get(`/market/projects/${id}/`);
         const projectData = projectRes.data;
@@ -608,14 +610,14 @@ export default function ProjectDetails() {
         setProposals(enrichedProposals);
       } catch (err) {
         console.error("Failed to load project:", err?.response?.status);
-        setError("خطا در بارگذاری اطلاعات پروژه. لطفا دوباره تلاش کنید.");
+        setLoadError("بارگذاری اطلاعات پروژه انجام نشد. دوباره تلاش کنید.");
       } finally {
         setLoading(false);
       }
     };
 
     loadProjectData();
-  }, [id, userData]);
+  }, [id, userData, loadAttempt]);
 
   const loadMoreProposals = async () => {
     if (!hasMoreProposals || loadingMoreProposals) return;
@@ -654,6 +656,17 @@ export default function ProjectDetails() {
     const number = Number(cleaned);
     if (isNaN(number)) return String(value);
     return number.toLocaleString("fa-IR") + " تومان";
+  };
+
+  const formatBudgetRange = () => {
+    const minimum = project?.budget_min;
+    const maximum = project?.budget_max;
+    if (minimum != null && maximum != null) {
+      return `${formatCurrencyToToman(minimum)} تا ${formatCurrencyToToman(maximum)}`;
+    }
+    if (minimum != null) return `از ${formatCurrencyToToman(minimum)}`;
+    if (maximum != null) return `تا ${formatCurrencyToToman(maximum)}`;
+    return "بودجه مشخص نشده";
   };
 
   const getProposalPrice = (proposal) => {
@@ -953,9 +966,16 @@ export default function ProjectDetails() {
     return null;
   };
 
+  const ownProposal = proposals[0] || null;
+  const ownProposalStatus = {
+    pending: "در انتظار بررسی",
+    accepted: "پذیرفته‌شده",
+    rejected: "ردشده",
+  }[ownProposal?.status] || "وضعیت نامشخص";
+
   if (loading) {
     return (
-      <div className="project-details-page" style={styles.pageContainer}>
+      <div className="project-details-page project-details-loading" data-user-type={userRole} style={styles.pageContainer}>
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -1023,8 +1043,8 @@ export default function ProjectDetails() {
 
   if (!project) {
     return (
-      <div className="project-details-page" style={styles.pageContainer}>
-        <div style={{
+      <div className="project-details-page project-details-state" data-user-type={userRole} style={styles.pageContainer}>
+        <div className="project-details-error-copy" style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1033,28 +1053,23 @@ export default function ProjectDetails() {
           gap: "16px",
           padding: "12px"
         }}>
-          <div style={{
-            fontSize: "50px",
-            marginBottom: "10px"
-          }}>
-            😕
-          </div>
+          <FileText size={30} aria-hidden="true" />
           <div style={{ textAlign: "center" }}>
             <h1 style={{ fontSize: "24px", fontWeight: "800", color: "#f1f5f9", marginBottom: "8px" }}>
-              پروژه یافت نشد
+              {loadError ? "دریافت پروژه ناموفق بود" : "پروژه یافت نشد"}
             </h1>
             <p style={{ fontSize: "13px", color: "#94a3b8", maxWidth: "400px", marginBottom: "24px" }}>
-              ممکن است پروژه حذف شده یا آدرس اشتباه باشد.
+              {loadError || "ممکن است پروژه حذف شده یا آدرس اشتباه باشد."}
             </p>
             <button
-              onClick={() => navigate("/dashboard/projects")}
+              onClick={() => loadError ? setLoadAttempt((attempt) => attempt + 1) : navigate("/dashboard/projects")}
               style={{
                 ...styles.primaryButton,
                 padding: "8px 20px"
               }}
             >
-              <ChevronLeft size={16} />
-              بازگشت به بازار کار
+              {loadError ? <Loader2 size={16} aria-hidden="true" /> : <ChevronLeft size={16} aria-hidden="true" />}
+              {loadError ? "تلاش دوباره" : "بازگشت به بازار کار"}
             </button>
           </div>
         </div>
@@ -1063,7 +1078,7 @@ export default function ProjectDetails() {
   }
 
   return (
-    <div className="project-details-page" style={styles.pageContainer}>
+    <div className="project-details-page" data-user-type={userRole} style={styles.pageContainer}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(20px); }
@@ -1138,7 +1153,7 @@ export default function ProjectDetails() {
         }}></div>
 
         <div className="project-details-banner-content" style={styles.container}>
-          <div style={{
+          <div className="project-details-toolbar" style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -1146,6 +1161,8 @@ export default function ProjectDetails() {
           }}>
             <button
               onClick={() => navigate(-1)}
+              type="button"
+              aria-label="بازگشت به صفحه قبل"
               style={{
                 background: "rgba(255, 255, 255, 0.1)",
                 border: "none",
@@ -1171,6 +1188,9 @@ export default function ProjectDetails() {
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <button
                 onClick={() => navigate("/dashboard/messages")}
+                type="button"
+                aria-label="رفتن به پیام‌ها"
+                title="پیام‌ها"
                 style={{
                   ...styles.hamburgerButton,
                   padding: "6px 10px"
@@ -1183,6 +1203,9 @@ export default function ProjectDetails() {
 
               <button
                 onClick={() => navigate("/dashboard/projects")}
+                type="button"
+                aria-label="رفتن به فهرست پروژه‌ها"
+                title="فهرست پروژه‌ها"
                 style={{
                   ...styles.hamburgerButton,
                   padding: "6px 10px"
@@ -1207,7 +1230,7 @@ export default function ProjectDetails() {
               </div>
             </div>
           </div> */}
-          <div style={{
+              <div style={{
             padding: "16px 0",
             position: "relative",
             zIndex: 1
@@ -1276,7 +1299,7 @@ export default function ProjectDetails() {
                   )}
                 </div>
 
-                <h1 style={{
+                <h1 className="project-details-title" style={{
                   ...styles.heading1,
                   fontSize: "28px",
                   color: "#ffffff",
@@ -1284,6 +1307,12 @@ export default function ProjectDetails() {
                 }}>
                   {project.title}
                 </h1>
+                {project.created_at && (
+                  <div className="project-details-date">
+                    <Calendar size={14} aria-hidden="true" />
+                    <time dateTime={project.created_at}>{formatDateIran(project.created_at)}</time>
+                  </div>
+                )}
               </div>
 
               <div style={{
@@ -1354,14 +1383,14 @@ export default function ProjectDetails() {
       </div>
 
       <div className="project-details-content" style={styles.container}>
-        <div style={styles.mainContent}>
-          <div style={{
+        <div className="project-details-scroll" style={styles.mainContent}>
+          <div className="project-details-facts" style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             gap: "16px",
             marginBottom: "20px"
           }}>
-            <div className="project-summary-card" style={{
+            <div className="project-summary-card project-fact-card project-fact-budget" style={{
               ...styles.card,
               animation: "fadeIn 0.6s ease-out 0.1s both"
             }}>
@@ -1402,27 +1431,12 @@ export default function ProjectDetails() {
                   color: "#10b981",
                   marginBottom: "5px"
                 }}>
-                  {project.budget_min?.toLocaleString("fa-IR")} - {project.budget_max?.toLocaleString("fa-IR")} تومان
-                </div>
-                <div style={{
-                  fontSize: "12px",
-                  color: "#94a3b8",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "5px"
-                }}>
-                  <div style={{
-                    width: "4px",
-                    height: "4px",
-                    borderRadius: "50%",
-                    backgroundColor: "#10b981"
-                  }}></div>
-                  قابل مذاکره
+                  {formatBudgetRange()}
                 </div>
               </div>
             </div>
 
-            <div className="project-summary-card" style={{
+            <div className="project-summary-card project-fact-card project-fact-category" style={{
               ...styles.card,
               animation: "fadeIn 0.6s ease-out 0.2s both"
             }}>
@@ -1469,12 +1483,12 @@ export default function ProjectDetails() {
                   fontSize: "12px",
                   color: "#94a3b8"
                 }}>
-                  مهارت و تخصص مورد نیاز برای این پروژه
+                  دسته‌بندی ثبت‌شده برای پروژه
                 </div>
               </div>
             </div>
 
-            <div className="project-summary-card" style={{
+            <div className="project-summary-card project-fact-card project-fact-proposals" style={{
               ...styles.card,
               animation: "fadeIn 0.6s ease-out 0.3s both"
             }}>
@@ -1502,10 +1516,12 @@ export default function ProjectDetails() {
                       ...styles.heading3,
                       marginBottom: "3px"
                     }}>
-                      پیشنهادها
+                      {isProjectOwner ? "پیشنهادهای دریافتی" : "وضعیت پیشنهاد شما"}
                     </h3>
                     <p style={styles.caption}>
-                      تعداد پیشنهادهای دریافتی
+                      {isProjectOwner
+                        ? "تعداد پیشنهادهای ثبت‌شده"
+                        : userRole === "freelancer" ? "وضعیت ارسال برای این پروژه" : "محدود به نقش کاربری"}
                     </p>
                   </div>
                 </div>
@@ -1515,24 +1531,21 @@ export default function ProjectDetails() {
                   color: "#f97316",
                   marginBottom: "5px"
                 }}>
-                  {totalProposals}
+                  {isProjectOwner
+                    ? totalProposals.toLocaleString("fa-IR")
+                    : userRole === "freelancer"
+                      ? hasApplied ? "ارسال‌شده" : project.status === "open" ? "ارسال نشده" : "بسته"
+                      : "—"}
                 </div>
-                <div style={{
+                {isProjectOwner && <div style={{
                   fontSize: "12px",
                   color: "#94a3b8",
                   display: "flex",
                   alignItems: "center",
                   gap: "5px"
                 }}>
-                  <div style={{
-                    width: "4px",
-                    height: "4px",
-                    borderRadius: "50%",
-                    backgroundColor: "#f97316",
-                    animation: totalProposals > 0 ? "pulse 2s infinite" : "none"
-                  }}></div>
-                  {totalProposals > 0 ? "پیشنهاد جدید موجود" : "در انتظار اولین پیشنهاد"}
-                </div>
+                  {totalProposals > 0 ? "پیشنهاد ثبت‌شده" : "هنوز پیشنهادی ثبت نشده"}
+                </div>}
               </div>
             </div>
           </div>
@@ -1576,7 +1589,7 @@ export default function ProjectDetails() {
             </div>
 
             <div style={styles.cardContent}>
-              <div style={{
+              <div className="project-description" style={{
                 ...styles.bodyText,
                 fontSize: "13px",
                 lineHeight: "1.6",
@@ -1587,7 +1600,7 @@ export default function ProjectDetails() {
               </div>
 
               {clientInfo && (
-                <div style={{
+                <div className="project-client-summary" style={{
                   background: "linear-gradient(90deg, rgba(139, 92, 246, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%)",
                   borderRadius: "12px",
                   padding: "12px",
@@ -1652,7 +1665,18 @@ export default function ProjectDetails() {
                 </div>
               )}
 
-              <div style={{
+              {Array.isArray(project.skills) && project.skills.filter(Boolean).length > 0 && (
+                <section className="project-details-skills" aria-labelledby="project-skills-title">
+                  <h3 id="project-skills-title">مهارت‌های موردنیاز</h3>
+                  <ul>
+                    {project.skills.filter(Boolean).map((skill) => (
+                      <li key={skill} dir="auto">{skill}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <div className="project-proposal-cta" style={{
                 padding: "16px",
                 background: "linear-gradient(90deg, rgba(37, 99, 235, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%)",
                 borderRadius: "12px",
@@ -1749,16 +1773,9 @@ export default function ProjectDetails() {
                       </p>
                     </div>
                     <button
+                      type="button"
+                      className="project-details-action"
                       onClick={() => setShowApplyForm(true)}
-                      style={styles.primaryButton}
-                      onMouseEnter={(e) => {
-                        e.target.style.transform = "translateY(-2px)";
-                        e.target.style.boxShadow = "0 8px 20px rgba(37, 99, 235, 0.4)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.transform = "translateY(0)";
-                        e.target.style.boxShadow = "0 4px 16px rgba(37, 99, 235, 0.3)";
-                      }}
                     >
                       <MessageSquare size={16} />
                       ارسال پیشنهاد
@@ -1788,7 +1805,7 @@ export default function ProjectDetails() {
             </div>
           </div>
 
-          <div className="project-details-card" style={{
+          <div className="project-details-card project-proposals-section" style={{
             ...styles.card,
             animation: "fadeIn 0.6s ease-out 0.5s both"
           }}>
@@ -1819,16 +1836,16 @@ export default function ProjectDetails() {
                   </div>
                   <div>
                     <h2 style={styles.heading2}>
-                      پیشنهادهای ارسال شده
+                      {isProjectOwner ? "پیشنهادهای دریافتی" : "پیشنهاد شما"}
                     </h2>
                     <p style={{
                       ...styles.caption,
                       fontSize: "13px",
                       color: "#cbd5e1"
                     }}>
-                      {totalProposals > 0
+                      {isProjectOwner && totalProposals > 0
                         ? `${totalProposals} پیشنهاد ثبت شده`
-                        : "در انتظار اولین پیشنهاد"}
+                        : isProjectOwner ? "پیشنهادهای این پروژه" : "وضعیت درخواست شما برای همکاری"}
                     </p>
                   </div>
                 </div>
@@ -1853,7 +1870,40 @@ export default function ProjectDetails() {
             </div>
 
             <div style={styles.cardContent}>
-              {proposals.length === 0 ? (
+              {userRole === "freelancer" ? (
+                <div className="project-own-proposal">
+                  {ownProposal ? (
+                    <>
+                      <div className="project-own-proposal-status">
+                        <span>وضعیت پیشنهاد</span>
+                        <strong className={`project-proposal-status project-proposal-status-${ownProposal.status || "pending"}`}>
+                          {ownProposalStatus}
+                        </strong>
+                      </div>
+                      {getProposalPrice(ownProposal) != null && (
+                        <div className="project-own-proposal-bid">
+                          <span>مبلغ پیشنهادی</span>
+                          <strong>{displayProposalPrice(ownProposal)}</strong>
+                        </div>
+                      )}
+                      {(ownProposal.message || ownProposal.cover_letter) && (
+                        <p dir="auto">{ownProposal.message || ownProposal.cover_letter}</p>
+                      )}
+                      <Link to="/dashboard/proposals">مشاهده همهٔ پیشنهادهای من</Link>
+                    </>
+                  ) : hasApplied ? (
+                    <>
+                      <strong>پیشنهاد شما ثبت شده است.</strong>
+                      <Link to="/dashboard/proposals">مشاهده پیشنهادهای من</Link>
+                    </>
+                  ) : (
+                    <>
+                      <strong>هنوز پیشنهادی برای این پروژه ارسال نکرده‌اید.</strong>
+                      <span>پس از ارسال، وضعیت پیشنهاد در این بخش نمایش داده می‌شود.</span>
+                    </>
+                  )}
+                </div>
+              ) : proposals.length === 0 ? (
                 <div style={{
                   textAlign: "center",
                   padding: "28px 12px"
@@ -1876,7 +1926,9 @@ export default function ProjectDetails() {
                     fontSize: "18px",
                     marginBottom: "8px"
                   }}>
-                    هنوز پیشنهادی ثبت نشده
+                    {isProjectOwner
+                      ? "هنوز پیشنهادی برای این پروژه دریافت نشده است"
+                      : "پیشنهادهای این پروژه فقط برای کارفرمای پروژه و فریلنسر ثبت‌کننده قابل مشاهده‌اند."}
                   </h3>
                   <p style={{
                     ...styles.bodyText,
@@ -1884,28 +1936,10 @@ export default function ProjectDetails() {
                     margin: "0 auto 20px",
                     color: "#94a3b8"
                   }}>
-                    اولین نفری باشید که برای این پروژه پیشنهاد می‌دهد
+                    {isProjectOwner
+                      ? "پیشنهادهای فریلنسرها برای بررسی در این بخش نمایش داده می‌شوند."
+                      : "اطلاعات پیشنهادها برای این حساب در دسترس نیست."}
                   </p>
-                  {project.status === "open" && userRole === 'freelancer' && !hasApplied && (
-                    <button
-                      onClick={() => setShowApplyForm(true)}
-                      style={{
-                        ...styles.primaryButton,
-                        padding: "10px 20px"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.target.style.transform = "translateY(-2px)";
-                        e.target.style.boxShadow = "0 8px 20px rgba(37, 99, 235, 0.4)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.transform = "translateY(0)";
-                        e.target.style.boxShadow = "0 4px 16px rgba(37, 99, 235, 0.3)";
-                      }}
-                    >
-                      <MessageSquare size={16} />
-                      ارسال اولین پیشنهاد
-                    </button>
-                  )}
                 </div>
               ) : (
                 <div>
@@ -1925,6 +1959,7 @@ export default function ProjectDetails() {
 
                     return (
                       <div
+                        className="project-proposal-card"
                         key={proposal.id || index}
                         style={{
                           ...styles.proposalCard,
@@ -2024,7 +2059,9 @@ export default function ProjectDetails() {
                                     fontSize: "12px",
                                     color: "#94a3b8"
                                   }}>
-                                    فریلنسر حرفه‌ای • {proposal.ratings_count || 0} پروژه انجام شده
+                                    {proposal.ratings_count
+                                      ? `${Number(proposal.ratings_count).toLocaleString("fa-IR")} نظر ثبت‌شده`
+                                      : "هنوز نظری ثبت نشده"}
                                   </div>
                                 </div>
                               </div>
@@ -2190,8 +2227,12 @@ export default function ProjectDetails() {
       </div>
 
       {showApplyForm && (
-        <div style={styles.modalOverlay}>
+        <div className="project-apply-overlay" style={styles.modalOverlay}>
           <div
+            className="project-apply-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-apply-title"
             style={{
               ...styles.modalContent,
               animation: "fadeIn 0.3s ease-out"
@@ -2223,7 +2264,7 @@ export default function ProjectDetails() {
                   <MessageSquare size={18} color="#ffffff" />
                 </div>
                 <div>
-                  <h2 style={{
+                  <h2 id="project-apply-title" style={{
                     ...styles.heading2,
                     fontSize: "18px",
                     marginBottom: "3px"
@@ -2275,7 +2316,7 @@ export default function ProjectDetails() {
                 gap: "16px"
               }}>
                 <div>
-                  <label htmlFor="project-proposal-bid" style={{
+                  <label htmlFor="project-proposal-cover-letter" style={{
                     display: "block",
                     fontSize: "13px",
                     fontWeight: "600",
@@ -2286,6 +2327,7 @@ export default function ProjectDetails() {
                     <span style={{ color: "#ef4444", marginRight: "3px" }}>*</span>
                   </label>
                   <textarea
+                    id="project-proposal-cover-letter"
                     rows={4}
                     value={form.cover_letter}
                     onChange={(e) => setForm(prev => ({ ...prev, cover_letter: e.target.value }))}
@@ -2313,7 +2355,7 @@ export default function ProjectDetails() {
                 </div>
 
                 <div>
-                  <label style={{
+                  <label htmlFor="project-proposal-bid" style={{
                     display: "block",
                     fontSize: "13px",
                     fontWeight: "600",
@@ -2360,7 +2402,7 @@ export default function ProjectDetails() {
                     color: "#64748b",
                     marginTop: "5px"
                   }}>
-                    بودجه پیشنهادی پروژه: {project.budget_min?.toLocaleString("fa-IR")} - {project.budget_max?.toLocaleString("fa-IR")} تومان
+                    بودجه پروژه: {formatBudgetRange()}
                   </div>
                 </div>
 
@@ -2437,41 +2479,18 @@ export default function ProjectDetails() {
                   borderTop: "1px solid rgba(100, 116, 139, 0.2)"
                 }}>
                   <button
+                    type="button"
+                    className="project-apply-cancel"
                     onClick={() => setShowApplyForm(false)}
-                    style={{
-                      ...styles.secondaryButton,
-                      padding: "8px 16px"
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.background = "rgba(100, 116, 139, 0.4)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.background = "rgba(71, 85, 105, 0.3)";
-                    }}
                   >
                     انصراف
                   </button>
                   <button
+                    type="button"
+                    className="project-details-action project-apply-submit"
                     onClick={handleSubmitProposal}
                     disabled={applyLoading}
-                    style={{
-                      ...styles.primaryButton,
-                      padding: "8px 20px",
-                      opacity: applyLoading ? 0.7 : 1,
-                      cursor: applyLoading ? "not-allowed" : "pointer"
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!applyLoading) {
-                        e.target.style.transform = "translateY(-2px)";
-                        e.target.style.boxShadow = "0 8px 20px rgba(37, 99, 235, 0.4)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!applyLoading) {
-                        e.target.style.transform = "translateY(0)";
-                        e.target.style.boxShadow = "0 4px 16px rgba(37, 99, 235, 0.3)";
-                      }
-                    }}
+                    style={{ opacity: applyLoading ? 0.65 : 1 }}
                   >
                     {applyLoading ? (
                       <>

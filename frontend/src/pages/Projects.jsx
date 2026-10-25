@@ -133,7 +133,6 @@ export default function Projects() {
   }, [projects]);
 
   const filtered = useMemo(() => {
-    const q = (query || "").trim().toLowerCase();
     return projects.filter((p) => {
       if (!p) return false;
       if (skillFilter) {
@@ -141,11 +140,9 @@ export default function Projects() {
         if (!skills.map(x => (x || "").toLowerCase()).includes(skillFilter.toLowerCase())) return false;
       }
       if (statusFilter && p.status !== statusFilter) return false;
-      if (!q) return true;
-      const hay = `${p.title || ""} ${p.description || ""}`.toLowerCase();
-      return hay.includes(q);
+      return true;
     });
-  }, [projects, query, skillFilter, statusFilter]);
+  }, [projects, skillFilter, statusFilter]);
 
   function getCookie(name) {
     if (typeof document === "undefined") return null;
@@ -396,7 +393,7 @@ export default function Projects() {
   };
 
   return (
-    <div className="projects-page" style={styles.container}>
+    <div className="projects-page" data-user-type={user?.user_type} style={styles.container}>
       <div className="projects-hero" style={styles.hero}>
         <img className="projects-hero-image" src="/images/marketplace.jpg" alt="" width="1400" height="933" fetchPriority="high" />
         <div className="projects-hero-shade" style={styles.heroOverlay} />
@@ -486,6 +483,11 @@ export default function Projects() {
             {(query || skillFilter || statusFilter) && (
               <button className="projects-filter-reset" onClick={() => { setPage(1); setProjects([]); setQuery(""); setSkillFilter(""); setStatusFilter(""); }} style={styles.clearBtn}>پاک کردن فیلترها</button>
             )}
+          </div>
+
+          <div className="projects-results-meta" aria-live="polite">
+            <span>{filtered.length.toLocaleString("fa-IR")} پروژه در نتایج بارگذاری‌شده</span>
+            <span>جستجو و وضعیت از سرور اعمال می‌شود؛ فیلتر مهارت فقط نتایج بارگذاری‌شده را محدود می‌کند.</span>
           </div>
 
           {isNarrow && (
@@ -636,9 +638,9 @@ export default function Projects() {
               </div>
             )
           )}
-          {hasNextPage && !loading && (
-            <button onClick={() => setPage((current) => current + 1)} style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}>
-              بارگذاری پروژه‌های بیشتر
+          {hasNextPage && (
+            <button className="projects-load-more" disabled={loading} onClick={() => setPage((current) => current + 1)}>
+              {loading ? "در حال بارگذاری..." : "بارگذاری پروژه‌های بیشتر"}
             </button>
           )}
         </main>

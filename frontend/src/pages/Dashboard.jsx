@@ -49,7 +49,7 @@ export default function Dashboard() {
   const isClientTop = normalizedUserTop?.user_type === "client";
 
   return (
-    <div className="workspace-shell">
+    <div className="workspace-shell" data-user-type={normalizedUserTop?.user_type}>
       <WorkspaceHeader
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
@@ -499,7 +499,7 @@ function DashboardHome({ user }) {
         };
 
         if (summary?.counts) {
-          setDashboardMetrics(mapDashboardMetrics(normalizedUser?.user_type, summary, proposalStats));
+          setDashboardMetrics(mapDashboardMetrics(normalizedUser?.user_type, summary, proposalStats, projectStats));
           if (isClient) {
             newStats.projects.total = summary.counts.projects_total ?? null;
             newStats.projects.active = summary.counts.in_progress ?? null;

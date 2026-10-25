@@ -15,10 +15,11 @@ test("client dashboard metrics use client counts from the API", () => {
 test("freelancer dashboard metrics use actual proposal statuses", () => {
   assert.deepEqual(mapDashboardMetrics("freelancer", {
     counts: { proposals_sent: 9, active_contracts: 1, earnings: 125000 },
-  }, { pending: 4, accepted: 1 }), {
+  }, { pending: 4, accepted: 1 }, { active: 2 }), {
     proposalsSent: 9,
     pendingProposals: 4,
     acceptedProposals: 1,
+    activeProjects: 2,
   });
 });
 
@@ -30,6 +31,11 @@ test("dashboard response helpers handle paginated and related entity shapes", ()
 });
 
 test("missing metrics remain unavailable instead of becoming false zeroes", () => {
-  assert.equal(mapDashboardMetrics("freelancer", { counts: {} }).proposalsSent, null);
+  assert.deepEqual(mapDashboardMetrics("freelancer", { counts: {} }), {
+    proposalsSent: null,
+    pendingProposals: null,
+    acceptedProposals: null,
+    activeProjects: null,
+  });
   assert.equal(mapDashboardMetrics("client", null).proposalsReceived, null);
 });

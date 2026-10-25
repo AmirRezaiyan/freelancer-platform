@@ -5,7 +5,7 @@ import fetchAllPages from "../utils/fetchAllPages";
 import ChatBox from "../components/ChatBox";
 import ResilientImage from "../components/ResilientImage";
 import { AuthContext } from "../context/auth-context";
-import { Star, User, Shield, Building, Sparkles, CheckCircle, Award } from "lucide-react";
+import { Star, User, Shield, Building, Sparkles, CheckCircle, Award, MessageCircle, RefreshCw } from "lucide-react";
 import { isUnreadFromOther } from "../api/messageState";
 
 const styles = {
@@ -357,14 +357,15 @@ export default function Messages() {
   };
 
   const renderSnippet = (lastMessage) => {
-    if (!lastMessage) return <span style={{ color: "#9ca3af" }}>تاکنون پیامی ثبت نشده است</span>;
-    const text = lastMessage.message ?? lastMessage.content ?? lastMessage.text ?? "";
+    if (!lastMessage) return <span className="messages-no-preview">تاکنون پیامی ثبت نشده است</span>;
+    const text = lastMessage.message ?? lastMessage.content ?? lastMessage.text ?? lastMessage.sticker ?? "";
+    const hasAttachment = Boolean(lastMessage.attachment || lastMessage.attachment_url || lastMessage.file);
     const short = text.length > 80 ? text.slice(0, 78) + "…" : text;
     const time = lastMessage.created_at ? new Date(lastMessage.created_at).toLocaleString("fa-IR") : "";
     return (
       <div>
-        <div style={{ color: "#cbd5e1", fontSize: 13 }}>{short}</div>
-        <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 6 }}>{time}</div>
+        {(short || hasAttachment) && <div className="messages-snippet-text" dir="auto">{short || "پیوست"}</div>}
+        {time && <time className="messages-snippet-time">{time}</time>}
       </div>
     );
   };
@@ -373,22 +374,22 @@ export default function Messages() {
     const { counterpartyInfo, project, lastMessage } = conversation;
     const proj = project;
     
-    let counterpartyName = "";
+    let counterpartyName = userType === "client" ? "فریلنسر" : "کارفرما";
     let counterpartyRole = "";
     
     if (userType === "client") {
       counterpartyRole = "freelancer";
-      counterpartyName = proj.hired_freelancer_name || proj.freelancer_name || proj.freelancer || `فریلنسر #${proj.id}`;
+      counterpartyName = proj.hired_freelancer_name || proj.freelancer_name || proj.hired_freelancer?.username || "فریلنسر";
     } else {
       counterpartyRole = "employer";
       if (proj.client) {
         if (typeof proj.client === "object") {
-          counterpartyName = proj.client.username || proj.client.name || `کارفرما #${proj.client.id}`;
-        } else {
-          counterpartyName = `کارفرما #${proj.client}`;
+          counterpartyName = proj.client.first_name && proj.client.last_name
+            ? `${proj.client.first_name} ${proj.client.last_name}`
+            : proj.client.username || proj.client.name || "کارفرما";
         }
       } else {
-        counterpartyName = `کارفرما #${proj.id}`;
+        counterpartyName = "کارفرما";
       }
     }
     
@@ -410,7 +411,7 @@ export default function Messages() {
               {renderStatusBadge(proj.status)}
             </div>
           </div>
-          <time className="messages-conversation-time">
+          <time className="messages-conversation-time" dateTime={lastMessage?.created_at || undefined}>
             { lastMessage?.created_at ? new Date(lastMessage.created_at).toLocaleTimeString("fa-IR", {hour: '2-digit', minute: '2-digit'}) : "" }
           </time>
         </div>
@@ -441,7 +442,7 @@ export default function Messages() {
   };
 
   return (
-    <div className="messages-page" data-selected={Boolean(selectedProjectId)} style={{ color: "#fff", display: "flex", gap: 20, padding: 16, height: "calc(100vh - 100px)" }}>
+    <div className="messages-page" data-user-type={userType} data-selected={Boolean(selectedProjectId)} style={{ color: "#fff", display: "flex", gap: 20, padding: 16, height: "calc(100vh - 100px)" }}>
       <aside style={{ 
         width: 400, 
         minWidth: 320, 
@@ -454,7 +455,7 @@ export default function Messages() {
         display: "flex",
         flexDirection: "column"
       }}>
-        <div style={{ 
+        <div className="messages-page-header" style={{
           display: "flex", 
           alignItems: "center", 
           justifyContent: "space-between", 
@@ -465,6 +466,10 @@ export default function Messages() {
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>پیام‌ها</h3>
           <div style={{ display: "flex", gap: 8 }}>
             <button 
+              type="button"
+              aria-label="بازنشانی گفتگوها"
+              disabled={loading}
+              aria-busy={loading}
               onClick={() => loadConversations()} 
               style={{ 
                 background: "transparent", 
@@ -487,13 +492,13 @@ export default function Messages() {
                 e.currentTarget.style.color = "#9ca3af";
               }}
             >
-              ⟳
+              <RefreshCw size={16} aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div style={{ 
+          <div className="messages-loading-state" role="status" style={{
             color: "#9ca3af", 
             padding: 20,
             textAlign: "center",
@@ -516,7 +521,7 @@ export default function Messages() {
             </div>
           </div>
         ) : error ? (
-          <div style={{ 
+          <div className="messages-error-state" role="alert" style={{
             color: "#fca5a5", 
             padding: 20,
             textAlign: "center",
@@ -524,10 +529,11 @@ export default function Messages() {
             borderRadius: 8,
             border: "1px solid rgba(239, 68, 68, 0.2)"
           }}>
-            {error}
+            <span>{error}</span>
+            <button type="button" onClick={loadConversations}>تلاش دوباره</button>
           </div>
         ) : conversations.length === 0 ? (
-          <div style={{ 
+          <div className="messages-conversation-list" style={{
             color: "#9ca3af", 
             padding: 20,
             textAlign: "center",
@@ -537,7 +543,7 @@ export default function Messages() {
             justifyContent: "center"
           }}>
             <div>
-              <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>💬</div>
+              <MessageCircle size={34} aria-hidden="true" />
               <div style={{ fontSize: 14, lineHeight: 1.6 }}>
                 هنوز گفتگویی وجود ندارد.<br/>
                 برای شروع گفتگو به صفحه پروژه مراجعه کنید<br/>
@@ -546,7 +552,7 @@ export default function Messages() {
             </div>
           </div>
         ) : (
-          <div style={{ 
+          <div className="messages-conversation-list" style={{
             display: "flex", 
             flexDirection: "column", 
             gap: 8,
@@ -575,18 +581,6 @@ export default function Messages() {
                     alignItems: "flex-start",
                     transition: "all 0.2s",
                     position: "relative"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = "transparent";
-                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.02)";
-                    }
                   }}
                 >
                   <div style={{ 
@@ -625,18 +619,6 @@ export default function Messages() {
                       </div>
                     )}
                     
-                    {c.lastMessage && (
-                      <div style={{
-                        position: "absolute",
-                        bottom: 2,
-                        right: 2,
-                        width: 10,
-                        height: 10,
-                        borderRadius: "50%",
-                        background: "#10b981",
-                        border: "2px solid #071029"
-                      }}></div>
-                    )}
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -677,7 +659,7 @@ export default function Messages() {
         `}</style>
       </aside>
 
-      <main style={{ 
+      <main className="messages-chat-area" style={{
         flex: 1, 
         height: "100%",
         background: "#071029", 
@@ -708,11 +690,11 @@ export default function Messages() {
             color: "#9ca3af" 
           }}>
             <div style={{ textAlign: "center", maxWidth: 400 }}>
-              <div style={{ fontSize: 64, marginBottom: 20, opacity: 0.2 }}>💬</div>
+              <MessageCircle size={42} aria-hidden="true" />
               <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 12, color: "#e5e7eb" }}>
                 یک گفتگو انتخاب کنید
               </div>
-              <div style={{ fontSize: 14, lineHeight: 1.6, color: "#9ca3ab8" }}>
+              <div style={{ fontSize: 14, lineHeight: 1.6, color: "#9ca3af" }}>
                 فهرست پیام‌ها اینجا نمایش داده می‌شود.<br/>
                 برای شروع گفتگو به صفحه پروژه بروید و روی «ارسال پیام» کلیک کنید.
               </div>

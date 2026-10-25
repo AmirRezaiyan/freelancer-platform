@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { AuthContext } from "../context/auth-context";
 import { formatCurrencyToToman, formatDateIran } from "../utils/formatters";
 import { mergeUniqueRecords } from "../utils/collectPaginatedResults";
+import { ArrowUpLeft, BriefcaseBusiness, FileText, Pencil, RotateCcw, Search, X } from "lucide-react";
 
 export default function Proposals() {
   const { user } = useContext(AuthContext);
@@ -14,6 +15,7 @@ export default function Proposals() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const loadingMoreRef = useRef(false);
 
   const [query, setQuery] = useState("");
@@ -62,7 +64,7 @@ export default function Proposals() {
       mounted = false;
       controller.abort();
     };
-  }, [user?.id, page]);
+  }, [user?.id, page, loadAttempt]);
 
   useEffect(() => {
     if (!editing) return undefined;
@@ -146,36 +148,79 @@ export default function Proposals() {
     return text.includes(query.toLowerCase());
   });
 
+  const statusCounts = proposals.reduce((counts, proposal) => {
+    const status = (proposal.status || proposal.state || "pending").toLowerCase();
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+  const statusFilters = [
+    { value: "", label: "همه", count: proposals.length },
+    { value: "pending", label: "در انتظار", count: statusCounts.pending || 0 },
+    { value: "accepted", label: "پذیرفته‌شده", count: statusCounts.accepted || 0 },
+    { value: "rejected", label: "ردشده", count: statusCounts.rejected || 0 },
+  ];
+  const resetFilters = () => {
+    setQuery("");
+    setStatusFilter("");
+  };
+
   return (
-    <div className="proposals-page" style={styles.container}>
-      <div className="proposals-header" style={styles.header}>
+    <div className="proposals-page" data-user-type="freelancer" style={styles.container}>
+      <header className="proposals-page-header">
         <div>
-          <h2 style={styles.title}>پیشنهادهای من</h2>
-          <p style={styles.subtitle}>پیشنهادهایی که برای پروژه‌ها فرستاده‌اید.</p>
+          <span className="proposals-page-eyebrow">فضای کاری فریلنسر</span>
+          <h1>پیشنهادهای من</h1>
+          <p>وضعیت و مبلغ پیشنهادهایی که برای پروژه‌ها فرستاده‌اید.</p>
         </div>
-        <div style={styles.headerControls}>
-          <input 
+        <Link className="proposals-find-project" to="/dashboard/projects">
+          <BriefcaseBusiness size={16} aria-hidden="true" />
+          جستجوی پروژه‌ها
+          <ArrowUpLeft size={15} aria-hidden="true" />
+        </Link>
+      </header>
+
+      <section className="proposals-toolbar" aria-label="جستجو و فیلتر پیشنهادها">
+        <label className="proposal-search-field">
+          <Search size={17} aria-hidden="true" />
+          <input
             aria-label="جستجو در پیشنهادها"
             placeholder="جستجو در عنوان یا متن..." 
             value={query} 
             onChange={e => setQuery(e.target.value)} 
-            style={styles.searchInput} 
           />
-          <select 
-            aria-label="فیلتر وضعیت پیشنهاد"
-            value={statusFilter} 
-            onChange={e => setStatusFilter(e.target.value)} 
-            style={styles.select}
-          >
-            <option value="">همه وضعیت‌ها</option>
-            <option value="pending">در انتظار</option>
-            <option value="accepted">پذیرفته‌شده</option>
-            <option value="rejected">ردشده</option>
-          </select>
+          {query && (
+            <button type="button" className="proposal-search-clear" aria-label="پاک کردن جستجو" onClick={() => setQuery("")}>
+              <X size={15} aria-hidden="true" />
+            </button>
+          )}
+        </label>
+        <div className="proposal-status-tabs" role="group" aria-label="فیلتر وضعیت پیشنهاد">
+          {statusFilters.map((filter) => (
+            <button
+              key={filter.value || "all"}
+              type="button"
+              aria-pressed={statusFilter === filter.value}
+              onClick={() => setStatusFilter(filter.value)}
+            >
+              <span>{filter.label}</span>
+              <span className="proposal-filter-count">{filter.count.toLocaleString("fa-IR")}</span>
+            </button>
+          ))}
         </div>
+      </section>
+
+      <div className="proposals-results-meta" aria-live="polite">
+        <strong>{shown.length.toLocaleString("fa-IR")} پیشنهاد</strong>
+        <span>از {proposals.length.toLocaleString("fa-IR")} مورد بارگذاری‌شده</span>
+        <span>فیلترها فقط روی موارد دریافت‌شده از سرور اعمال می‌شوند.</span>
       </div>
 
-      {error && <div className="proposals-error" role="alert" style={styles.error}>{error}</div>}
+      {error && (
+        <div className="proposals-error" role="alert" style={styles.error}>
+          <span>{error}</span>
+          {!loading && <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>تلاش دوباره</button>}
+        </div>
+      )}
 
       {loading ? (
         <div className="proposals-loading" role="status" style={styles.loading}>
@@ -183,87 +228,88 @@ export default function Proposals() {
           در حال بارگذاری...
         </div>
       ) : shown.length === 0 ? (
-        <div className="proposals-empty" style={styles.empty}>
-          <div style={styles.emptyIcon}>📭</div>
-          <h3 style={styles.emptyTitle}>پیشنهادی برای نمایش نیست</h3>
-          <p style={styles.emptyText}>برای پیدا کردن فرصت‌های تازه، پروژه‌ها را بررسی کنید.</p>
-          <Link to="/dashboard/projects" style={styles.cta}>مشاهده پروژه‌ها</Link>
-        </div>
+        proposals.length > 0 ? (
+          <div className="proposals-empty proposals-filter-empty">
+            <span className="proposals-empty-icon"><Search size={21} aria-hidden="true" /></span>
+            <h2>نتیجه‌ای با این فیلترها پیدا نشد</h2>
+            <p>عبارت جستجو یا وضعیت انتخاب‌شده را تغییر دهید.</p>
+            <button type="button" onClick={resetFilters}>پاک کردن فیلترها</button>
+          </div>
+        ) : (
+          <div className="proposals-empty">
+            <span className="proposals-empty-icon"><FileText size={22} aria-hidden="true" /></span>
+            <h2>هنوز پیشنهادی ارسال نکرده‌اید</h2>
+            <p>پروژه‌های باز را بررسی کنید و برای فرصت مناسب پیشنهاد بفرستید.</p>
+            <Link className="proposals-empty-link" to="/dashboard/projects">
+              جستجوی پروژه‌ها <ArrowUpLeft size={15} aria-hidden="true" />
+            </Link>
+          </div>
+        )
       ) : (
-        <div className="proposal-list" style={styles.list}>
+        <div className="proposal-list">
           {shown.map(p => {
             const status = (p.status || p.state || 'pending').toLowerCase();
             const isPending = status === 'pending';
-            const isAccepted = status === 'accepted';
-            const canWithdraw = isPending;
+            const canMutate = isPending && p.project_status === "open";
+            const projectId = p.project?.id ?? p.project;
+            const projectTitle = p.project_title || p.project?.title || "عنوان پروژه در دسترس نیست";
+            const amount = p.bid_amount ?? p.bid ?? p.amount;
             
             return (
-              <div key={p.id} className="proposal-card" style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <div>
-                    <div style={styles.projectTitle}>{p.project?.title || p.project_title || '—'}</div>
-                    <div style={styles.meta}>{formatDateIran(p.created_at)} • #{p.id}</div>
-                  </div>
-
-                  <div style={styles.cardHeaderRight}>
-                    <div style={styles.priceSection}>
-                      <div style={styles.price}>{formatCurrencyToToman(p.bid_amount || p.bid || p.amount || 0)}</div>
-                      <div style={styles.statusRow}>
-                        <StatusBadge status={status} />
+              <article key={p.id} className="proposal-card">
+                <header className="proposal-card-header">
+                  <div className="proposal-project-main">
+                    <span className="proposal-project-icon"><BriefcaseBusiness size={18} aria-hidden="true" /></span>
+                    <div className="proposal-project-copy">
+                      <Link className="proposal-project-title" to={`/dashboard/projects/${projectId}`}>
+                        {projectTitle}
+                      </Link>
+                      <div className="proposal-record-meta">
+                        <time dateTime={p.created_at}>{formatDateIran(p.created_at)}</time>
+                        <span>شناسهٔ پیشنهاد {Number(p.id).toLocaleString("fa-IR")}</span>
                       </div>
                     </div>
+                  </div>
+                  <div className="proposal-offer-summary">
+                    <span>مبلغ پیشنهادی</span>
+                    <strong>{amount == null ? "—" : formatCurrencyToToman(amount)}</strong>
+                  </div>
+                  <StatusBadge status={status} />
+                </header>
 
-                    <div style={styles.actionButtons}>
-                      <Link 
-                        to={`/dashboard/projects/${p.project?.id || p.project}`} 
-                        style={styles.viewBtn}
+                <div className="proposal-card-message">
+                  <span>متن پیشنهاد</span>
+                  <p dir="auto">{p.message || p.cover_letter || "متنی برای این پیشنهاد ثبت نشده است."}</p>
+                </div>
+
+                {isPending && p.project_status !== "open" && (
+                  <p className="proposal-action-note">
+                    {p.project_status ? "پروژه دیگر باز نیست و امکان تغییر پیشنهاد وجود ندارد." : "وضعیت پروژه برای تغییر پیشنهاد در دسترس نیست."}
+                  </p>
+                )}
+
+                <footer className="proposal-card-actions">
+                  <Link className="proposal-project-link" to={`/dashboard/projects/${projectId}`}>
+                    مشاهده پروژه <ArrowUpLeft size={15} aria-hidden="true" />
+                  </Link>
+                  {canMutate && (
+                    <div className="proposal-mutation-actions">
+                      <button type="button" className="proposal-edit-button" onClick={() => openEdit(p)}>
+                        <Pencil size={15} aria-hidden="true" /> ویرایش
+                      </button>
+                      <button
+                        type="button"
+                        className="proposal-withdraw-button"
+                        onClick={() => handleWithdraw(p.id)}
+                        disabled={withdrawingId === p.id}
                       >
-                        مشاهده پروژه
-                      </Link>
-
-                      {isPending && (
-                        <button onClick={() => openEdit(p)} style={styles.editBtn}>
-                          ویرایش
-                        </button>
-                      )}
-
-                      <button 
-                        onClick={() => handleWithdraw(p.id)} 
-                        disabled={withdrawingId === p.id || !canWithdraw}
-                        style={{
-                          ...styles.withdrawBtn,
-                          ...(!canWithdraw ? styles.withdrawBtnDisabled : {})
-                        }}
-                      >
-                        {withdrawingId === p.id 
-                          ? 'در حال لغو...' 
-                          : isAccepted 
-                            ? 'پذیرفته‌شده'
-                            : canWithdraw ? 'پس گرفتن' : 'ردشده'
-                        }
+                        {withdrawingId === p.id ? <RotateCcw size={15} aria-hidden="true" /> : <X size={15} aria-hidden="true" />}
+                        {withdrawingId === p.id ? "در حال پس‌گرفتن..." : "پس گرفتن پیشنهاد"}
                       </button>
                     </div>
-                  </div>
-                </div>
-
-                <div style={styles.cardBody}>
-                  <p style={styles.message}>{p.message || p.cover_letter || '—'}</p>
-                </div>
-
-                <div style={styles.cardFooter}>
-                  <div style={styles.footerLeft}>
-                    <span style={styles.smallText}>وضعیت سرور: {p.status || p.state || 'pending'}</span>
-                  </div>
-                  <div style={styles.footerRight}>
-                    <Link 
-                      to={`/dashboard/projects/${p.project?.id || p.project}`} 
-                      style={styles.linkSmall}
-                    >
-                      مشاهده پروژه
-                    </Link>
-                  </div>
-                </div>
-              </div>
+                  )}
+                </footer>
+              </article>
             );
           })}
         </div>
@@ -271,6 +317,7 @@ export default function Proposals() {
 
       {hasNextPage && !loading && (
         <button
+          className="proposals-load-more"
           onClick={() => {
             if (loadingMoreRef.current) return;
             loadingMoreRef.current = true;
@@ -278,7 +325,6 @@ export default function Proposals() {
             setPage((current) => current + 1);
           }}
           disabled={loadingMore}
-          style={{ display: "block", margin: "20px auto", padding: "10px 18px" }}
         >
           {loadingMore ? "در حال بارگذاری..." : "بارگذاری پیشنهادهای بیشتر"}
         </button>

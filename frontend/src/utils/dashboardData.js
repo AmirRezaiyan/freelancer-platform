@@ -1,4 +1,4 @@
-export function mapDashboardMetrics(userType, response, proposalStats = {}) {
+export function mapDashboardMetrics(userType, response, proposalStats = {}, projectStats = {}) {
   const counts = response?.counts || {};
   const numberOrNull = (value) => value != null && Number.isFinite(Number(value)) ? Number(value) : null;
 
@@ -15,6 +15,7 @@ export function mapDashboardMetrics(userType, response, proposalStats = {}) {
       proposalsSent: numberOrNull(counts.proposals_sent),
       pendingProposals: numberOrNull(proposalStats.pending),
       acceptedProposals: numberOrNull(proposalStats.accepted),
+      activeProjects: numberOrNull(projectStats.active),
     };
   }
 

@@ -303,7 +303,7 @@ class ProposalListView(generics.ListAPIView):
         project_id = self.kwargs["project_id"]
         project = get_object_or_404(Project, pk=project_id)
         user = self.request.user
-        base_qs = Proposal.objects.order_by("-created_at", "-pk")
+        base_qs = Proposal.objects.select_related("project").order_by("-created_at", "-pk")
         if project.client_id == user.id:
             return base_qs.filter(project=project)
         if user.user_type == "freelancer":
@@ -316,7 +316,7 @@ class MyProposalsListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        return Proposal.objects.filter(freelancer=user).order_by("-created_at", "-pk")
+        return Proposal.objects.filter(freelancer=user).select_related("project").order_by("-created_at", "-pk")
 
 
 class ProposalDetailView(generics.RetrieveUpdateDestroyAPIView):

@@ -109,6 +109,7 @@ export default function DashboardOverview({
             <Metric label="پیشنهادهای ارسال‌شده" value={metrics.proposalsSent} icon={<FileText size={18} />} />
             <Metric label="در انتظار بررسی" value={metrics.pendingProposals} icon={<MessageCircle size={18} />} />
             <Metric label="پیشنهادهای پذیرفته‌شده" value={metrics.acceptedProposals} icon={<Check size={18} />} />
+            <Metric label="پروژه‌های در حال انجام" value={metrics.activeProjects} icon={<BriefcaseBusiness size={18} />} />
           </>
         )}
         {error && (

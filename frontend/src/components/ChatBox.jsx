@@ -1071,7 +1071,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     const avatarSrc = counterpartyInfo.avatar || counterpartyInfo.profile_picture || counterpartyInfo.photo_url;
 
     return (
-      <div style={styles.userProfileHeader}>
+      <div className="chat-header" style={styles.userProfileHeader}>
         {/* آواتار کاربر مقابل */}
         <div style={styles.userAvatar}>
           {avatarSrc ? (
@@ -1095,6 +1095,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
             {projectInfo && renderStatusBadge(projectInfo.status)}
           </div>
           
+          {projectInfo?.title && <div className="chat-project-title" dir="auto">{projectInfo.title}</div>}
           <div style={styles.userDetails}>
             {counterpartyRating.rating > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -1118,14 +1119,6 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           </div>
         </div>
         
-        <div style={{
-          width: "10px",
-          height: "10px",
-          borderRadius: "50%",
-          background: "#10b981",
-          boxShadow: "0 0 10px #10b981",
-          flexShrink: 0
-        }}></div>
       </div>
     );
   };
@@ -1136,7 +1129,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
 
       <div ref={messagesContainerRef} style={styles.messagesContainer}>
         {olderPage && (
-          <button onClick={loadOlderMessages} disabled={loadingOlder} style={{ alignSelf: "center" }}>
+          <button type="button" onClick={loadOlderMessages} disabled={loadingOlder} style={{ alignSelf: "center" }}>
             {loadingOlder ? "در حال بارگذاری پیام‌های قبلی..." : "بارگذاری پیام‌های قبلی"}
           </button>
         )}
@@ -1165,21 +1158,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
             return (
               <div key={key} className="chat-message-row" style={m.is_mine ? styles.rowRight : styles.rowLeft}>
                 <div style={m.is_mine ? styles.msgGroupRight : styles.msgGroupLeft}>
-                  {!m.is_mine && (
-                    <div style={{ position: "relative" }}>
-                      <UserAvatar src={m.sender_avatar} size={32} />
-                      <div style={{
-                        position: "absolute",
-                        bottom: 0,
-                        right: 0,
-                        width: "8px",
-                        height: "8px",
-                        borderRadius: "50%",
-                        background: "#10b981",
-                        border: "2px solid #0f1115"
-                      }}></div>
-                    </div>
-                  )}
+                  {!m.is_mine && <UserAvatar src={m.sender_avatar} size={32} />}
 
                   <div className={m.is_mine ? "chat-message-bubble mine" : "chat-message-bubble"} style={m.is_mine ? styles.bubbleMine : styles.bubbleOther}>
                     {m.file_url && (
@@ -1247,21 +1226,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
                     <div className="chat-message-time" style={styles.msgTime}>{formatDateIran(m.created_at)}</div>
                   </div>
 
-                  {m.is_mine && (
-                    <div style={{ position: "relative" }}>
-                      <UserAvatar src={m.sender_avatar || currentUser?.avatar} size={32} />
-                      <div style={{
-                        position: "absolute",
-                        bottom: 0,
-                        right: 0,
-                        width: "8px",
-                        height: "8px",
-                        borderRadius: "50%",
-                        background: "#10b981",
-                        border: "2px solid #0f1115"
-                      }}></div>
-                    </div>
-                  )}
+                  {m.is_mine && <UserAvatar src={m.sender_avatar || currentUser?.avatar} size={32} />}
                 </div>
               </div>
             );
@@ -1345,6 +1310,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           type="button"
           onClick={() => fileInputRef.current?.click()}
           style={styles.iconBtn}
+          aria-label="افزودن پیوست"
           title="افزودن فایل (زیر ۲۵ مگابایت)"
         >
           <Paperclip size={20} />
@@ -1354,6 +1320,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           type="button"
           onClick={() => setShowStickers(!showStickers)}
           style={{ ...styles.iconBtn, color: showStickers ? "#fbbf24" : "#9ca3af" }}
+          aria-label="افزودن شکلک"
+          aria-expanded={showStickers}
         >
           <Smile size={20} />
         </button>
@@ -1371,6 +1339,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
 
         <button
           type="submit"
+          aria-label={sending ? "در حال ارسال پیام" : "ارسال پیام"}
           disabled={sending || loading || (!text.trim() && !file)}
           style={{
             ...styles.sendBtn,
