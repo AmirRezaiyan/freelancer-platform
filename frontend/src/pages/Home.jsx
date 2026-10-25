@@ -116,7 +116,7 @@ export default function Home() {
       <section className="public-hero" aria-labelledby="public-title">
         <div className="public-hero-content">
           <span className="public-hero-eyebrow"><span aria-hidden="true" /> بازار کار مستقل‌ها</span>
-          <h1 id="public-title">پروژه‌ات را شروع کن؛ همکاری حرفه‌ای بساز.</h1>
+          <h1 id="public-title">پروژه‌ات را شروع کن؛<br className="public-hero-break" /> همکاری حرفه‌ای بساز.</h1>
           <p>پروژه ثبت کن، متخصص مناسب را پیدا کن و مسیر همکاری را شفاف و آسان پیش ببر؛ مهارتت را به فرصت‌های واقعی وصل کن.</p>
           <div className="public-hero-actions">
             {canShowAccountActions && (
