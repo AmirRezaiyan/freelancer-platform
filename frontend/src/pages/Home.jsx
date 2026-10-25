@@ -5,7 +5,7 @@ import { AlertCircle, ArrowUpLeft, BriefcaseBusiness, CalendarDays, Check, FileT
 import { AuthContext } from "../context/auth-context";
 import { formatCurrencyToToman, formatDateIran, formatProjectCategory } from "../utils/formatters";
 import { registrationPath } from "../utils/landingRoutes";
-import { publicProjectResults, publicProjectState } from "../utils/landingData";
+import { featuredPublicProjects, publicProjectResults, publicProjectState } from "../utils/landingData";
 import ResilientImage from "../components/ResilientImage";
 
 export default function Home() {
@@ -42,7 +42,7 @@ export default function Home() {
           signal: controller.signal,
         });
         const projects = publicProjectResults(res.data);
-        if (active) setRecent(projects.slice(0, 3));
+        if (active) setRecent(projects);
       } catch (requestError) {
         if (active && !controller.signal.aborted) {
           setError(requestError?.response?.status ? "نمایش پروژه‌های تازه در دسترس نیست." : "ارتباط با سرور برقرار نشد.");
@@ -61,6 +61,7 @@ export default function Home() {
   const isAuthenticated = Boolean(user);
   const canShowAccountActions = isAuthenticated || !authLoading;
   const projectState = publicProjectState({ loading, error, projects: recent });
+  const featuredProjects = featuredPublicProjects(recent);
   const workspacePath = isAuthenticated ? "/dashboard" : null;
   const clientPath = isAuthenticated ? workspacePath : registrationPath("client");
   const freelancerPath = isAuthenticated ? workspacePath : registrationPath("freelancer");
@@ -68,9 +69,9 @@ export default function Home() {
   return (
     <main className="public-home" id="top" dir="rtl">
       <header className="public-header">
-        <Link className="public-brand" to="/" aria-label="MyMarket، صفحه اصلی">
+        <Link className="public-brand" to="/" aria-label="همکار، صفحه اصلی">
           <span className="public-brand-mark"><BriefcaseBusiness size={19} aria-hidden="true" /></span>
-          <span className="public-brand-copy"><strong dir="ltr">MyMarket</strong><small>بازار کار مستقل‌ها</small></span>
+          <span className="public-brand-copy"><strong dir="ltr">Hamkar</strong><small>بازار کار مستقل‌ها</small></span>
         </Link>
         <nav className="public-nav" aria-label="راهنمای صفحه">
           <a href="#top" aria-current="page">خانه</a>
@@ -238,7 +239,7 @@ export default function Home() {
             <h2 id="open-projects-title">پروژه‌های باز</h2>
           </div>
           {canShowAccountActions && (
-            <Link to={isAuthenticated ? "/dashboard/projects" : registrationPath("freelancer")}>مشاهده همه پروژه‌ها<ArrowUpLeft size={16} aria-hidden="true" /></Link>
+            <Link to="/dashboard/projects">مشاهده همه پروژه‌ها<ArrowUpLeft size={16} aria-hidden="true" /></Link>
           )}
         </div>
         {projectState === "loading" ? (
@@ -251,9 +252,9 @@ export default function Home() {
             <AlertCircle size={19} aria-hidden="true" />
             <span>{error}</span>
           </div>
-        ) : projectState === "success" && recent.length > 0 ? (
-          <div className="public-project-list">
-            {recent.map((project, index) => {
+        ) : projectState === "success" && featuredProjects.length > 0 ? (
+          <div className={`public-project-list public-project-list-count-${featuredProjects.length}`}>
+            {featuredProjects.map((project, index) => {
               const budgetMin = project.budget_min != null && project.budget_min !== "" ? Number(project.budget_min) : null;
               const budgetMax = project.budget_max != null && project.budget_max !== "" ? Number(project.budget_max) : null;
               const hasBudgetMin = Number.isFinite(budgetMin);
@@ -271,10 +272,10 @@ export default function Home() {
                   <div className="public-project-card-top">
                     {project.category && <span className="public-project-category">{formatProjectCategory(project.category)}</span>}
                   </div>
-                  <h3>{isAuthenticated
+                  <h3 className="public-project-title">{isAuthenticated
                     ? <Link to={`/dashboard/projects/${project.id}`}>{project.title}</Link>
                     : project.title}</h3>
-                  {description && <p>{description.slice(0, 180)}</p>}
+                  {description && <p className="public-project-description">{description}</p>}
                   <div className="public-project-meta">
                     {project.created_at && <span className="public-project-date"><CalendarDays size={15} aria-hidden="true" />{formatDateIran(project.created_at)}</span>}
                     {budgetLabel && <strong><WalletCards size={15} aria-hidden="true" />{budgetLabel}</strong>}
@@ -305,7 +306,7 @@ export default function Home() {
         <img className="public-signup-image" src="/images/guest-home/signup-leaves.jpg" alt="" width="359" height="103" />
         <div className="public-signup-content">
           <span>به جمع متخصصان حرفه‌ای بپیوندید</span>
-          <h2 id="public-signup-title">همین حالا عضو MyMarket شو</h2>
+          <h2 id="public-signup-title">همین حالا عضو همکار شو</h2>
           <p>به جامعه‌ای از متخصصان حرفه‌ای بپیوندید و مسیر شغلی‌ات را رشد بده.</p>
           {!isAuthenticated && canShowAccountActions && (
             <Link to={registrationPath("freelancer")}>ثبت‌نام رایگان<ArrowUpLeft size={15} aria-hidden="true" /></Link>
@@ -314,9 +315,9 @@ export default function Home() {
       </section>
 
       <footer className="public-footer" id="public-footer">
-        <Link className="public-brand" to="/" aria-label="MyMarket، صفحه اصلی">
+        <Link className="public-brand" to="/" aria-label="همکار، صفحه اصلی">
           <span className="public-brand-mark"><BriefcaseBusiness size={17} aria-hidden="true" /></span>
-          <span className="public-brand-copy"><strong dir="ltr">MyMarket</strong><small>بازار کار مستقل‌ها</small></span>
+          <span className="public-brand-copy"><strong dir="ltr">Hamkar</strong><small>بازار کار مستقل‌ها</small></span>
         </Link>
         <nav className="public-footer-sections" aria-label="بخش‌های صفحه">
           <a href="#open-projects">پروژه‌های باز</a>
@@ -329,7 +330,7 @@ export default function Home() {
           <span className="public-footer-social-icon" aria-label="Instagram"><Instagram size={16} aria-hidden="true" /></span>
           <span className="public-footer-social-label">با ما در ارتباط باشید</span>
         </div>
-        <small className="public-footer-copyright" dir="ltr">© 2025 MyMarket. All rights reserved.</small>
+        <small className="public-footer-copyright" dir="ltr">© 2025 Hamkar. All rights reserved.</small>
       </footer>
     </main>
   );

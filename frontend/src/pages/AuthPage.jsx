@@ -116,9 +116,9 @@ export default function AuthPage({ mode }) {
   return (
     <main className={`auth-screen ${isLogin ? "auth-screen-login" : "auth-screen-register"}`} dir="rtl">
       <section className="auth-form-panel" aria-labelledby="auth-title">
-        <Link className="auth-wordmark" to="/login" aria-label="MyMarket، صفحه ورود">
+        <Link className="auth-wordmark" to="/login" aria-label="همکار، صفحه ورود">
           <span className="auth-wordmark-mark">م</span>
-          <span>MyMarket</span>
+          <span>Hamkar</span>
         </Link>
 
         <div className="auth-form-content">
@@ -268,7 +268,7 @@ export default function AuthPage({ mode }) {
         <div className="auth-visual-content">
           <span className="auth-visual-label">کار حرفه‌ای، ارتباط مستقیم</span>
           <p>{isLogin ? "همکاری بعدی‌تان را از جایی ادامه دهید که متوقف شد." : "مهارت‌ها و فرصت‌ها را در یک فضای کاری روشن به هم وصل کنید."}</p>
-          <span className="auth-visual-index">MYMARKET <span>۰{isLogin ? "۱" : "۲"}</span></span>
+          <span className="auth-visual-index">HAMKAR <span>۰{isLogin ? "۱" : "۲"}</span></span>
         </div>
       </aside>
     </main>

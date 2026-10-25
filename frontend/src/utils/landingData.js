@@ -4,6 +4,10 @@ export function publicProjectResults(response) {
   return [];
 }
 
+export function featuredPublicProjects(projects) {
+  return Array.isArray(projects) ? projects.slice(0, 3) : [];
+}
+
 export function publicProjectState({ loading, error, projects }) {
   if (loading) return "loading";
   if (error) return "error";

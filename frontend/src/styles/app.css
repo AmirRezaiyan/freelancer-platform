@@ -6575,7 +6575,7 @@ a {
   }
 }
 /* -------------------------------------------------------------------------- */
-/* MyMarket public landing page — visual refinement matching the reference    */
+/* Hamkar public landing page — visual refinement matching the reference      */
 /* -------------------------------------------------------------------------- */
 .public-home {
   --paper: #f7f5ee;
@@ -7161,9 +7161,9 @@ a {
 }
 
 .public-project-loading {
-  min-height: 220px;
+  min-height: 144px;
   align-content: center;
-  padding: 28px;
+  padding: 20px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fffefa;
@@ -8170,7 +8170,7 @@ a {
 
 
 /* -------------------------------------------------------------------------- */
-/* Precision pass based on the supplied MyMarket reference                    */
+/* Precision pass based on the supplied Hamkar reference                      */
 /* -------------------------------------------------------------------------- */
 /* The hero decoration is a multi-petal SVG instead of the previous flat blob. */
 .public-hero-visual {
@@ -8769,5 +8769,397 @@ a {
     height: 98%;
     object-position: center 48%;
     border-radius: 23% 29% 17% 13% / 13% 22% 18% 23%;
+  }
+}
+
+.public-home {
+  --public-content-max: 1280px;
+  --public-content-gutter: clamp(12px, 3.75vw, 54px);
+}
+
+.public-header {
+  gap: clamp(12px, 2vw, 28px);
+  padding-inline: max(var(--public-content-gutter), calc((100% - var(--public-content-max)) / 2));
+}
+
+.public-nav {
+  min-width: 0;
+  transform: none;
+}
+
+.public-hero,
+.public-roles,
+.public-projects,
+.public-signup {
+  width: min(calc(100% - var(--public-content-gutter) - var(--public-content-gutter)), var(--public-content-max));
+}
+
+.public-process {
+  padding-inline: max(var(--public-content-gutter), calc((100% - var(--public-content-max)) / 2));
+  padding-block: 24px 30px;
+}
+
+.public-projects {
+  min-height: 0;
+}
+
+.public-project-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-content: start;
+  align-items: stretch;
+}
+
+.public-project-list-count-1 {
+  grid-template-columns: minmax(0, min(100%, 440px));
+}
+
+.public-project-list-count-2 {
+  grid-template-columns: repeat(2, minmax(0, min(100%, 440px)));
+}
+
+.public-project-item {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 168px;
+  gap: 8px;
+  padding: 14px;
+  justify-self: stretch;
+}
+
+.public-project-item h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.public-project-item p {
+  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 761px) {
+  .public-projects-heading {
+    align-items: end;
+    justify-content: flex-start;
+    gap: clamp(16px, 2vw, 28px);
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .public-project-list-count-2,
+  .public-project-list-count-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-project-list-count-3 > .public-project-item:last-child {
+    grid-column: 1 / -1;
+    width: min(100%, 440px);
+    justify-self: center;
+  }
+}
+
+.public-footer {
+  padding-inline: max(var(--public-content-gutter), calc((100% - var(--public-content-max)) / 2));
+}
+
+@media (min-width: 1101px) {
+  .public-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: clamp(28px, 4vw, 56px);
+  }
+
+  .public-hero-content {
+    max-width: 520px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 900px) {
+  .public-header {
+    gap: 12px;
+    padding-inline: 24px;
+  }
+
+  .public-nav {
+    gap: 14px;
+  }
+
+  .public-hero {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    column-gap: 20px;
+  }
+}
+
+@media (min-width: 561px) and (max-width: 760px) {
+  .public-hero {
+    grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
+    align-items: center;
+    column-gap: clamp(10px, 2vw, 18px);
+    padding-block: 14px 26px;
+  }
+
+  .public-hero-content {
+    padding: 8px 0;
+  }
+
+  .public-hero h1 {
+    margin-block: 9px;
+    font-size: clamp(23px, 4vw, 29px);
+    line-height: 1.4;
+  }
+
+  .public-hero-content > p {
+    font-size: 11px;
+    line-height: 1.75;
+  }
+
+  .public-hero-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+    margin-top: 12px;
+  }
+
+  .public-hero-primary,
+  .public-hero-secondary {
+    width: 100%;
+    min-height: 36px;
+    padding-inline: 8px;
+    font-size: 9px;
+  }
+
+  .public-hero-visual {
+    width: 100%;
+    aspect-ratio: 1.45;
+    transform: none;
+  }
+
+  .public-role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .public-role,
+  .public-role-freelancer {
+    min-height: 232px;
+    grid-template-columns: minmax(76px, 0.65fr) minmax(0, 1.35fr);
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .public-role h3 {
+    font-size: 15px;
+  }
+
+  .public-role-content > p {
+    font-size: 10px;
+  }
+
+  .public-process {
+    padding-block: 25px 24px;
+  }
+
+  .public-project-item {
+    max-width: 560px;
+  }
+}
+
+@media (max-width: 760px) {
+  .public-project-list,
+  .public-project-list-count-2,
+  .public-project-list-count-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .public-project-item {
+    max-width: 480px;
+    min-height: 160px;
+    justify-self: start;
+  }
+
+  .public-project-item p {
+    -webkit-line-clamp: 3;
+  }
+
+  .public-footer {
+    display: grid;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    gap: 12px 18px;
+    padding-block: 18px 12px;
+  }
+
+  .public-footer > .public-brand {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+
+  .public-footer-sections {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+  }
+
+  .public-footer > div {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    gap: 9px;
+  }
+
+  .public-footer-social-label {
+    margin-inline-start: 2px;
+  }
+
+  .public-footer-copyright {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .public-footer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+  }
+
+  .public-footer > .public-brand,
+  .public-footer-sections,
+  .public-footer > div,
+  .public-footer-copyright {
+    grid-column: 1;
+  }
+
+  .public-footer > .public-brand {
+    grid-row: 1;
+  }
+
+  .public-footer > div {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .public-footer-sections {
+    grid-row: 3;
+  }
+
+  .public-footer-copyright {
+    grid-row: 4;
+  }
+}
+
+@media (max-width: 560px) {
+  .public-home {
+    --public-content-gutter: 12px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .public-home {
+    --public-content-max: 1232px;
+  }
+
+  .public-hero {
+    min-height: 0;
+    column-gap: clamp(28px, 3vw, 44px);
+    padding-block: 10px 16px;
+  }
+
+  .public-hero-visual {
+    aspect-ratio: 1.68;
+  }
+
+  .public-roles {
+    padding-bottom: 16px;
+  }
+
+  .public-role {
+    min-height: 0;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .public-role-client-visual img {
+    height: clamp(176px, 14vw, 188px);
+  }
+
+  .public-role-freelancer-visual img {
+    width: min(100%, 148px);
+    height: 158px;
+  }
+
+  .public-process {
+    padding-block: 18px 22px;
+  }
+
+  .public-process-grid {
+    margin-top: 12px;
+  }
+
+  .public-process-step {
+    gap: 8px;
+    padding-inline: 16px;
+  }
+
+  .public-projects {
+    padding-block: 16px 12px;
+  }
+
+  .public-projects-heading {
+    margin-bottom: 8px;
+  }
+
+  .public-projects-heading .public-section-heading h2 {
+    font-size: 24px;
+  }
+
+  .public-projects-heading > a {
+    min-height: 34px;
+  }
+
+  .public-project-list {
+    gap: 14px;
+  }
+
+  .public-project-list-count-2 {
+    justify-content: center;
+  }
+
+  .public-project-item {
+    min-height: 156px;
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .public-project-meta {
+    margin-top: 0;
+    padding-top: 6px;
+    gap: 6px 8px;
+  }
+
+  .public-project-loading {
+    min-height: 124px;
+    padding-block: 16px;
+  }
+
+  .public-signup {
+    min-height: 122px;
+    margin-bottom: 16px;
+  }
+
+  .public-footer {
+    min-height: 96px;
+    grid-template-rows: 1fr 24px;
+    gap: 10px 16px;
+    padding-block: 8px 6px;
   }
 }

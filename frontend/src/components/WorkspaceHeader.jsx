@@ -56,9 +56,9 @@ export default function WorkspaceHeader({ sidebarOpen, onToggleSidebar }) {
         >
           {sidebarOpen ? <X size={19} /> : <Menu size={19} />}
         </button>
-        <Link className="workspace-brand" to="/dashboard" aria-label="MyMarket، نمای کلی">
+        <Link className="workspace-brand" to="/dashboard" aria-label="همکار، نمای کلی">
           <span className="workspace-brand-mark"><BriefcaseBusiness size={17} /></span>
-          <span>MyMarket</span>
+          <span>Hamkar</span>
         </Link>
         <span className="workspace-current-page" aria-current="page">{pageTitle}</span>
       </div>
