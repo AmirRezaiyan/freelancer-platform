@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "../api/axios";
 import AuthAPI from "../api/auth";
 import { AuthContext } from "./auth-context";
@@ -6,33 +6,53 @@ import { AuthContext } from "./auth-context";
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileRefreshing, setProfileRefreshing] = useState(true);
+  const [profileError, setProfileError] = useState(null);
 
-  const fetchMe = async () => {
-    const access = localStorage.getItem("access_token");
-    if (!access) {
-      setLoading(false);
+  const refreshUser = useCallback(async () => {
+    if (!localStorage.getItem("access_token")) {
       setUser(null);
-      return;
+      setProfileError(null);
+      setProfileRefreshing(false);
+      return null;
     }
+
+    setProfileRefreshing(true);
     try {
       const res = await api.get("/users/me/");
       setUser(res.data);
-    } catch {
-      setUser(null);
+      setProfileError(null);
+      return res.data;
+    } catch (error) {
+      setUser((current) => current ? { ...current, profile_completion: null } : current);
+      setProfileError(error);
+      return null;
     } finally {
-      setLoading(false);
+      setProfileRefreshing(false);
     }
-  };
+  }, []);
+
+  const fetchMe = useCallback(async () => {
+    if (!localStorage.getItem("access_token")) {
+      setLoading(false);
+      setUser(null);
+      setProfileRefreshing(false);
+      return;
+    }
+    await refreshUser();
+    setLoading(false);
+  }, [refreshUser]);
 
   useEffect(() => {
     fetchMe();
-  }, []);
+  }, [fetchMe]);
 
   const login = async (email, password) => {
     try {
       const userData = await AuthAPI.login(email, password); 
       setUser(userData);
-      return { success: true, user: userData };
+      const currentUser = await refreshUser();
+      return { success: true, user: currentUser || userData };
     } catch (err) {
       return { success: false, error: err.response?.data || err.message };
     }
@@ -51,10 +71,12 @@ export default function AuthProvider({ children }) {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     setUser(null);
+    setProfileError(null);
+    setProfileRefreshing(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, setUser, login, register }}>
+    <AuthContext.Provider value={{ user, loading, profileRefreshing, profileError, refreshUser, logout, setUser, login, register }}>
       {children}
     </AuthContext.Provider>
   );

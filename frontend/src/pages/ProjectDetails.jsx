@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
@@ -6,6 +6,8 @@ import { formatCurrencyToToman, formatDateIran, formatProjectCategory } from "..
 import { buildProposalPayload, validateProposalBid } from "../utils/proposalPayload";
 import ResilientImage from "../components/ResilientImage";
 import { AuthContext } from "../context/auth-context";
+import ProfileCompletionCard from "../components/ProfileCompletionCard";
+import { canSubmitProposal, getProfileIncompleteDetails } from "../utils/profileCompletion";
 import {
   DollarSign,
   Tag,
@@ -407,6 +409,10 @@ const styles = {
 export default function ProjectDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: rawUser, setUser, refreshUser, profileRefreshing } = useContext(AuthContext);
+  const userData = rawUser?.user ?? rawUser ?? null;
+  const userRole = userData?.user_type ?? null;
+  const canSubmitProposalNow = canSubmitProposal(userData, profileRefreshing);
 
   const [project, setProject] = useState(null);
   const [proposals, setProposals] = useState([]);
@@ -425,8 +431,7 @@ export default function ProjectDetails() {
   const [success, setSuccess] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
   const [isHovered, setIsHovered] = useState({});
-  const [userRole, setUserRole] = useState(null);
-  const [userData, setUserData] = useState(null);
+  const [proposalGateError, setProposalGateError] = useState(null);
   const [isProjectOwner, setIsProjectOwner] = useState(false);
   const [clientInfo, setClientInfo] = useState(null);
 
@@ -439,32 +444,6 @@ export default function ProjectDetails() {
     }
     return null;
   };
-
-  useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const userRes = await api.get('/users/me/');
-        const userData = userRes.data;
-        setUserData(userData);
-
-        if (userData.role) {
-          setUserRole(userData.role);
-        } else if (userData.is_freelancer) {
-          setUserRole('freelancer');
-        } else if (userData.is_employer) {
-          setUserRole('employer');
-        } else if (userData.user_type) {
-          setUserRole(userData.user_type);
-        } else {
-          setUserRole(userData.is_staff ? 'employer' : 'freelancer');
-        }
-      } catch (err) {
-        console.error("Error loading user data:", err?.response?.status);
-      }
-    };
-
-    loadUserData();
-  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -804,6 +783,14 @@ export default function ProjectDetails() {
       return;
     }
 
+    if (!canSubmitProposalNow) {
+      setProposalGateError({
+        completion: userData?.profile_completion || null,
+        errorMessage: "برای ارسال پیشنهاد، ابتدا شرایط پایه پروفایل فریلنسری خود را تکمیل کنید.",
+      });
+      return;
+    }
+
     if (hasApplied) return;
 
     if (project?.status && project.status !== "open") {
@@ -826,6 +813,7 @@ export default function ProjectDetails() {
     try {
       setApplyLoading(true);
       setError(null);
+      setProposalGateError(null);
       const payload = buildProposalPayload(project.id, bidAmount, form.cover_letter.trim());
 
       const response = await api.post(`/market/proposals/`, payload);
@@ -851,6 +839,22 @@ export default function ProjectDetails() {
       }
     } catch (err) {
       const errorData = err?.response?.data;
+      const incompleteDetails = getProfileIncompleteDetails(err);
+      if (incompleteDetails) {
+        const completion = incompleteDetails.profileCompletion || {
+          ...(userData?.profile_completion || {}),
+          is_complete: false,
+          can_submit_proposal: false,
+          missing: incompleteDetails.missingFields,
+        };
+        setUser((current) => current ? { ...current, profile_completion: completion } : current);
+        setProposalGateError({
+          completion,
+          errorMessage: "برای ارسال پیشنهاد، ابتدا شرایط پایه پروفایل فریلنسری خود را تکمیل کنید.",
+        });
+        setError(null);
+        return;
+      }
 
       let errorMessage = "خطا در ارسال پیشنهاد";
       if (errorData) {
@@ -1754,6 +1758,17 @@ export default function ProjectDetails() {
                       فقط فریلنسرها می‌توانند برای پروژه‌ها پیشنهاد ارسال کنند.
                     </span>
                   </div>
+                ) : !canSubmitProposalNow ? (
+                  <ProfileCompletionCard
+                    compact
+                    completion={proposalGateError?.completion || userData?.profile_completion}
+                    userType={userRole}
+                    title="برای ارسال پیشنهاد پروفایل خود را تکمیل کنید"
+                    description="پس از تأیید شرایط پایه پروفایل، می‌توانید برای این پروژه پیشنهاد بفرستید."
+                    errorMessage={proposalGateError?.errorMessage}
+                    onRetry={refreshUser}
+                    retrying={profileRefreshing}
+                  />
                 ) : !hasApplied ? (
                   <div style={{
                     display: "flex",
@@ -2310,6 +2325,20 @@ export default function ProjectDetails() {
             <div style={{
               padding: "20px"
             }}>
+              {!canSubmitProposalNow && (
+                <div style={{ marginBottom: 16 }}>
+                  <ProfileCompletionCard
+                    compact
+                    completion={proposalGateError?.completion || userData?.profile_completion}
+                    userType={userRole}
+                    title="برای ارسال پیشنهاد پروفایل خود را تکمیل کنید"
+                    description="اطلاعات واردشده حفظ می‌شود؛ پس از تکمیل پروفایل می‌توانید دوباره اقدام کنید."
+                    errorMessage={proposalGateError?.errorMessage}
+                    onRetry={refreshUser}
+                    retrying={profileRefreshing}
+                  />
+                </div>
+              )}
               <div style={{
                 display: "flex",
                 flexDirection: "column",
@@ -2489,8 +2518,8 @@ export default function ProjectDetails() {
                     type="button"
                     className="project-details-action project-apply-submit"
                     onClick={handleSubmitProposal}
-                    disabled={applyLoading}
-                    style={{ opacity: applyLoading ? 0.65 : 1 }}
+                    disabled={applyLoading || !canSubmitProposalNow}
+                    style={{ opacity: applyLoading || !canSubmitProposalNow ? 0.65 : 1 }}
                   >
                     {applyLoading ? (
                       <>

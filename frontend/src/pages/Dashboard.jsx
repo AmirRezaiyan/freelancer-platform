@@ -10,6 +10,7 @@ import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
 import { markAllProjectMessagesRead } from "../api/messageState";
 import { entityId, mapDashboardMetrics, pageResults } from "../utils/dashboardData";
+import { canCreateProject } from "../utils/profileCompletion";
 
 export default function Dashboard() {
   const { user, loading, logout } = useContext(AuthContext);
@@ -459,6 +460,9 @@ function DashboardHome({ user }) {
   const normalizedUser = normalizeUser(user);
   const isFreelancer = normalizedUser?.user_type === "freelancer";
   const isClient = normalizedUser?.user_type === "client";
+  const canCreateProjectNow = canCreateProject(normalizedUser);
+  const clientProjectActionPath = canCreateProjectNow ? "/dashboard/projects/create" : "/dashboard/profile";
+  const clientProjectActionLabel = canCreateProjectNow ? "ساخت پروژه" : "تکمیل پروفایل";
 
   useEffect(() => () => {
     if (portfolioPreviewUrlRef.current) {
@@ -939,7 +943,7 @@ function DashboardHome({ user }) {
               {isClient ? (
                 <>
                   <button
-                    onClick={() => navigate("/dashboard/projects/create")}
+                    onClick={() => navigate(clientProjectActionPath)}
                     className="hover-glow"
                     style={{
                       background: "linear-gradient(135deg, #f472b6 0%, #a855f7 100%)",
@@ -958,7 +962,7 @@ function DashboardHome({ user }) {
                     }}
                   >
                     <span>➕</span>
-                    <span>ساخت پروژه</span>
+                    <span>{clientProjectActionLabel}</span>
                   </button>
                   <button
                     onClick={() => navigate("/dashboard/projects")}
@@ -1276,7 +1280,7 @@ function DashboardHome({ user }) {
                     }
                   </div>
                   <button
-                    onClick={() => navigate(isClient ? "/dashboard/projects/create" : "/dashboard/projects")}
+                    onClick={() => navigate(isClient ? clientProjectActionPath : "/dashboard/projects")}
                     style={{
                       background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
                       color: "#fff",
@@ -1287,7 +1291,7 @@ function DashboardHome({ user }) {
                       fontWeight: 600
                     }}
                   >
-                    {isClient ? "➕ ایجاد پروژه" : "🔍 مشاهده پروژه‌ها"}
+                    {isClient ? `➕ ${canCreateProjectNow ? "ایجاد پروژه" : "تکمیل پروفایل"}` : "🔍 مشاهده پروژه‌ها"}
                   </button>
                 </div>
               )}
@@ -1468,7 +1472,7 @@ function DashboardHome({ user }) {
                     marginBottom: 24
                   }}>
                     <button
-                      onClick={() => navigate("/dashboard/projects/create")}
+                      onClick={() => navigate(clientProjectActionPath)}
                       className="hover-lift"
                       style={{
                         padding: 24,
@@ -1481,8 +1485,8 @@ function DashboardHome({ user }) {
                       }}
                     >
                       <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
-                      <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 6 }}>انتشار پروژه</div>
-                      <div style={{ color: "#94a3b8", fontSize: 13 }}>پروژه جدید ایجاد کنید</div>
+                      <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 6 }}>{canCreateProjectNow ? "انتشار پروژه" : "تکمیل پروفایل"}</div>
+                      <div style={{ color: "#94a3b8", fontSize: 13 }}>{canCreateProjectNow ? "پروژه جدید ایجاد کنید" : "برای انتشار پروژه، اطلاعات پایه را تکمیل کنید"}</div>
                     </button>
                     <button
                       onClick={() => navigate("/dashboard/projects")}
@@ -1559,7 +1563,7 @@ function DashboardHome({ user }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {isClient ? (
                 <>
-                  <SidebarButton icon="📝" label="ساخت پروژه" onClick={() => navigate("/dashboard/projects/create")} />
+                  <SidebarButton icon="📝" label={clientProjectActionLabel} onClick={() => navigate(clientProjectActionPath)} />
                   <SidebarButton icon="📁" label="مدیریت پروژه‌ها" onClick={() => navigate("/dashboard/projects")} />
                   <SidebarButton icon="💬" label="پیام‌ها" onClick={() => navigate("/dashboard/messages")} />
                 </>

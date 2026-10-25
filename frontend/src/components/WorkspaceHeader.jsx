@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { BriefcaseBusiness, FileText, LogOut, Menu, MessageCircle, Plus, Search, UserRound, X } from "lucide-react";
 import { AuthContext } from "../context/auth-context";
 import UserAvatar from "./UserAvatar";
+import { canCreateProject } from "../utils/profileCompletion";
 
 function getPageTitle(pathname) {
   if (pathname === "/dashboard" || pathname === "/dashboard/") return "نمای کلی";
@@ -20,6 +21,7 @@ export default function WorkspaceHeader({ sidebarOpen, onToggleSidebar }) {
   const { user: rawUser, logout } = useContext(AuthContext);
   const user = rawUser?.user ?? rawUser;
   const isClient = user?.user_type === "client";
+  const canCreate = canCreateProject(user);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const location = useLocation();
@@ -66,10 +68,10 @@ export default function WorkspaceHeader({ sidebarOpen, onToggleSidebar }) {
       <div className="workspace-header-actions">
         <Link
           className="workspace-primary-action"
-          to={isClient ? "/dashboard/projects/create" : "/dashboard/projects"}
+          to={isClient ? (canCreate ? "/dashboard/projects/create" : "/dashboard/profile") : "/dashboard/projects"}
         >
-          {isClient ? <Plus size={17} aria-hidden="true" /> : <Search size={17} aria-hidden="true" />}
-          <span>{isClient ? "ساخت پروژه" : "جستجوی پروژه"}</span>
+          {isClient ? (canCreate ? <Plus size={17} aria-hidden="true" /> : <UserRound size={17} aria-hidden="true" />) : <Search size={17} aria-hidden="true" />}
+          <span>{isClient ? (canCreate ? "ساخت پروژه" : "تکمیل پروفایل") : "جستجوی پروژه"}</span>
         </Link>
         <Link className="workspace-icon-link" to="/dashboard/messages" aria-label="پیام‌ها" title="پیام‌ها">
           <MessageCircle size={19} aria-hidden="true" />

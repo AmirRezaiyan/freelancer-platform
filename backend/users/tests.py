@@ -11,6 +11,7 @@ from datetime import timedelta
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from core.settings import build_security_settings
+from .profile_completion import BIO_MIN_LENGTH, get_profile_completion
 from .models import User
 
 class UserModelTest(TestCase):
@@ -194,6 +195,26 @@ class AuthenticationSecurityTests(TestCase):
 		self.assertNotIn("access", response.data)
 		self.assertNotIn("refresh", response.data)
 
+	def test_login_error_does_not_distinguish_unknown_email_from_bad_password(self):
+		User.objects.create_user(email="known-login@example.com", password="Correct!Horse_7291")
+
+		unknown_response = self.api.post(
+			"/api/users/login/",
+			{"email": "missing-login@example.com", "password": "Wrong!Horse_7291"},
+			format="json",
+			REMOTE_ADDR="203.0.113.41",
+		)
+		wrong_password_response = self.api.post(
+			"/api/users/login/",
+			{"email": "known-login@example.com", "password": "Wrong!Horse_7291"},
+			format="json",
+			REMOTE_ADDR="203.0.113.42",
+		)
+
+		self.assertEqual(unknown_response.status_code, 400)
+		self.assertEqual(unknown_response.status_code, wrong_password_response.status_code)
+		self.assertEqual(unknown_response.data, wrong_password_response.data)
+
 	def test_repeated_login_attempts_are_throttled(self):
 		statuses = []
 		for _ in range(6):
@@ -269,3 +290,297 @@ class AuthenticationSecurityTests(TestCase):
 			format="json",
 		)
 		self.assertEqual(expired_response.status_code, 401)
+
+
+class ProfileCompletionTests(TestCase):
+	def make_user(self, user_type="freelancer", **fields):
+		return User.objects.create_user(
+			email=f"{user_type}-{User.objects.count()}@profile.test",
+			password="pass",
+			user_type=user_type,
+			**fields,
+		)
+
+	def test_empty_profile_is_incomplete_for_role(self):
+		user = self.make_user()
+
+		result = get_profile_completion(user)
+
+		self.assertFalse(result["is_complete"])
+		self.assertEqual(result["percentage"], 0)
+		self.assertEqual(result["missing"], ["first_name", "last_name", "bio", "skills"])
+		self.assertFalse(result["can_create_project"])
+		self.assertFalse(result["can_initiate_chat"])
+		self.assertFalse(result["can_submit_proposal"])
+
+	def test_whitespace_names_and_bio_do_not_count(self):
+		user = self.make_user(
+			first_name="  ",
+			last_name="\t",
+			bio=" " * BIO_MIN_LENGTH,
+			skills=["Python"],
+		)
+
+		result = get_profile_completion(user)
+
+		self.assertEqual(result["missing"], ["first_name", "last_name", "bio"])
+		self.assertEqual(result["percentage"], 25)
+
+	def test_bio_must_meet_trimmed_minimum_length(self):
+		bio = "x" * (BIO_MIN_LENGTH - 1)
+		user = self.make_user(first_name="Ada", last_name="Lovelace", bio=f" {bio} ", skills=["Python"])
+
+		result = get_profile_completion(user)
+
+		self.assertEqual(result["missing"], ["bio"])
+		self.assertFalse(result["is_complete"])
+
+	def test_freelancer_requires_at_least_one_nonempty_string_skill(self):
+		user = self.make_user(
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			skills=[" ", None, 4],
+		)
+
+		result = get_profile_completion(user)
+
+		self.assertEqual(result["missing"], ["skills"])
+		self.assertFalse(result["can_initiate_chat"])
+
+	def test_complete_freelancer_can_initiate_chat_but_not_create_projects(self):
+		user = self.make_user(
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			skills=[" Python ", ""],
+		)
+
+		result = get_profile_completion(user)
+
+		self.assertTrue(result["is_complete"])
+		self.assertEqual(result["percentage"], 100)
+		self.assertTrue(result["can_initiate_chat"])
+		self.assertFalse(result["can_create_project"])
+		self.assertTrue(result["can_submit_proposal"])
+
+	def test_complete_client_uses_nonempty_business_field(self):
+		user = self.make_user(
+			user_type="client",
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			business_fields=["  ", "Software"],
+		)
+
+		result = get_profile_completion(user)
+
+		self.assertTrue(result["is_complete"])
+		self.assertTrue(result["can_create_project"])
+		self.assertTrue(result["can_initiate_chat"])
+		self.assertFalse(result["can_submit_proposal"])
+
+	def test_current_user_api_exposes_role_correct_proposal_capability(self):
+		complete_freelancer = self.make_user(
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			skills=["Python"],
+		)
+		incomplete_freelancer = self.make_user(user_type="freelancer")
+		client = self.make_user(
+			user_type="client",
+			first_name="Grace",
+			last_name="Hopper",
+			bio="A sufficiently long profile biography.",
+			business_fields=["Software"],
+		)
+		unknown_role = self.make_user(
+			user_type="unknown",
+			first_name="Grace",
+			last_name="Hopper",
+			bio="A sufficiently long profile biography.",
+			skills=["Python"],
+		)
+		api = APIClient()
+
+		for user, expected in (
+			(complete_freelancer, True),
+			(incomplete_freelancer, False),
+			(client, False),
+			(unknown_role, False),
+		):
+			with self.subTest(user_type=user.user_type, expected=expected):
+				api.force_authenticate(user=user)
+				response = api.get("/api/users/me/")
+				self.assertEqual(response.status_code, 200)
+				self.assertEqual(response.data["profile_completion"]["can_submit_proposal"], expected)
+
+	def test_client_can_use_meaningful_company_description_instead(self):
+		user = self.make_user(
+			user_type="client",
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			business_fields=[],
+			company_description="Our company builds useful products for local businesses.",
+		)
+
+		self.assertTrue(get_profile_completion(user)["is_complete"])
+
+	def test_malformed_role_data_does_not_satisfy_completion(self):
+		freelancer = self.make_user(
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			skills={"skill": "Python"},
+		)
+		client = self.make_user(
+			user_type="client",
+			first_name="Grace",
+			last_name="Hopper",
+			bio="A sufficiently long profile biography.",
+			business_fields={"field": "Software"},
+			company_description="short",
+		)
+
+		self.assertEqual(get_profile_completion(freelancer)["missing"], ["skills"])
+		self.assertEqual(
+			get_profile_completion(client)["missing"],
+			["business_fields_or_company_description"],
+		)
+
+	def test_unknown_user_role_never_gets_proposal_capability(self):
+		user = self.make_user(
+			user_type="unknown",
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			skills=["Python"],
+		)
+
+		result = get_profile_completion(user)
+
+		self.assertFalse(result["can_submit_proposal"])
+		self.assertFalse(result["is_complete"])
+		self.assertIn("user_type", result["missing"])
+
+	def test_authenticated_profile_exposes_completion_but_public_profile_does_not(self):
+		user = self.make_user()
+		api = APIClient()
+		api.force_authenticate(user=user)
+
+		private_response = api.get("/api/users/me/")
+		public_response = api.get(f"/api/users/{user.pk}/")
+
+		self.assertEqual(private_response.status_code, 200)
+		self.assertIn("profile_completion", private_response.data)
+		self.assertEqual(private_response.data["profile_completion"], get_profile_completion(user))
+		self.assertEqual(public_response.status_code, 200)
+		self.assertNotIn("profile_completion", public_response.data)
+		self.assertNotIn("email", public_response.data)
+
+	def test_user_role_remains_read_only_on_profile_updates(self):
+		user = self.make_user(user_type="freelancer")
+		api = APIClient()
+		api.force_authenticate(user=user)
+
+		response = api.patch("/api/users/me/", {"user_type": "client"}, format="json")
+
+		self.assertEqual(response.status_code, 200)
+		user.refresh_from_db()
+		self.assertEqual(user.user_type, "freelancer")
+
+	def test_profile_list_fields_reject_malformed_object_values(self):
+		freelancer = self.make_user(user_type="freelancer")
+		client = self.make_user(user_type="client")
+		api = APIClient()
+		api.force_authenticate(user=freelancer)
+		invalid_skill_payloads = (
+			{"skills": {"skill": "Python"}},
+			{"skills": '{"skill":"Python"}'},
+			{"skills_json": '{"skill":"Python"}'},
+		)
+
+		for payload in invalid_skill_payloads:
+			with self.subTest(payload=payload):
+				self.assertEqual(api.patch("/api/users/me/", payload, format="json").status_code, 400)
+
+		api.force_authenticate(user=client)
+		invalid_business_payloads = (
+			{"business_fields": {"field": "Software"}},
+			{"business_fields_json": '{"field":"Software"}'},
+		)
+		for payload in invalid_business_payloads:
+			with self.subTest(payload=payload):
+				self.assertEqual(api.patch("/api/users/me/", payload, format="json").status_code, 400)
+
+		freelancer.refresh_from_db()
+		client.refresh_from_db()
+		self.assertEqual(freelancer.skills, [])
+		self.assertEqual(client.business_fields, [])
+
+	def test_experience_years_rejects_negative_null_and_malformed_values(self):
+		user = self.make_user()
+		api = APIClient()
+		api.force_authenticate(user=user)
+
+		for value in (-1, None, "not-an-integer"):
+			with self.subTest(value=value):
+				response = api.patch("/api/users/me/", {"experience_years": value}, format="json")
+				self.assertEqual(response.status_code, 400)
+
+		valid_response = api.patch("/api/users/me/", {"experience_years": 12}, format="json")
+		self.assertEqual(valid_response.status_code, 200)
+		self.assertEqual(valid_response.data["experience_years"], 12)
+		blank_response = api.patch("/api/users/me/", {"experience_years": ""}, format="json")
+		self.assertEqual(blank_response.status_code, 200)
+		user.refresh_from_db()
+		self.assertEqual(user.experience_years, 12)
+
+	def test_malformed_website_type_returns_validation_error(self):
+		user = self.make_user()
+		api = APIClient()
+		api.force_authenticate(user=user)
+
+		response = api.patch("/api/users/me/", {"website": {"url": "https://example.com"}}, format="json")
+
+		self.assertEqual(response.status_code, 400)
+
+	def test_profile_editor_json_array_payloads_are_preserved(self):
+		freelancer = self.make_user(user_type="freelancer")
+		client = self.make_user(user_type="client")
+		api = APIClient()
+		api.force_authenticate(user=freelancer)
+		freelancer_response = api.patch(
+			"/api/users/me/",
+			{
+				"first_name": "Ada",
+				"last_name": "Lovelace",
+				"bio": "A sufficiently long profile biography.",
+				"skills": '["Python", " Django "]',
+				"skills_json": '["Python", " Django "]',
+			},
+			format="json",
+		)
+		api.force_authenticate(user=client)
+		client_response = api.patch(
+			"/api/users/me/",
+			{
+				"first_name": "Grace",
+				"last_name": "Hopper",
+				"bio": "A sufficiently long profile biography.",
+				"business_fields": '["Software"]',
+				"business_fields_json": '["Software"]',
+			},
+			format="json",
+		)
+
+		self.assertEqual(freelancer_response.status_code, 200)
+		self.assertEqual(client_response.status_code, 200)
+		freelancer.refresh_from_db()
+		client.refresh_from_db()
+		self.assertEqual(freelancer.skills, ["Python", "Django"])
+		self.assertEqual(client.business_fields, ["Software"])
+		self.assertTrue(freelancer_response.data["profile_completion"]["is_complete"])
+		self.assertTrue(client_response.data["profile_completion"]["is_complete"])

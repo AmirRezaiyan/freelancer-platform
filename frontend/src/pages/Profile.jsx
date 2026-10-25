@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useState, useRef } from "react";
 import api from "../api/axios";
 import { AuthContext } from "../context/auth-context";
+import ProfileCompletionCard from "../components/ProfileCompletionCard";
 import { formatDateIran } from "../utils/formatters";
 import fetchAllPages from "../utils/fetchAllPages";
 import ResilientImage from "../components/ResilientImage";
@@ -181,7 +182,7 @@ function SelectInput({ id, value, onChange, options, placeholder }) {
 }
 
 export default function Profile() {
-  const { user, setUser } = useContext(AuthContext);
+  const { user, setUser, refreshUser, profileRefreshing } = useContext(AuthContext);
 
   const [form, setForm] = useState({
     first_name: "",
@@ -202,6 +203,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const [cropOpen, setCropOpen] = useState(false);
   const [cropImageUrl, setCropImageUrl] = useState(null);
@@ -757,6 +759,7 @@ export default function Profile() {
     setSaving(true);
     setMessage("");
     setMessageType(null);
+    setFieldErrors({});
 
     if (!form.first_name || !String(form.first_name).trim()) {
       setMessageType("error");
@@ -839,6 +842,21 @@ export default function Profile() {
       console.error("Profile submit error:", err?.response?.status);
       const serverData = err?.response?.data;
       let errorMessage = "ذخیره‌سازی ناموفق بود.";
+      const nextFieldErrors = {};
+      const profileFieldNames = new Set([
+        "first_name",
+        "last_name",
+        "bio",
+        "phone",
+        "skills",
+        "languages",
+        "business_fields",
+        "company_description",
+        "company_size",
+        "website",
+        "experience_years",
+        "avatar",
+      ]);
       
       if (serverData) {
         if (typeof serverData === 'string') {
@@ -846,6 +864,11 @@ export default function Profile() {
         } else if (serverData.detail) {
           errorMessage = serverData.detail;
         } else if (typeof serverData === 'object') {
+          for (const [key, value] of Object.entries(serverData)) {
+            if (profileFieldNames.has(key)) {
+              nextFieldErrors[key] = Array.isArray(value) ? value.join(" ") : String(value);
+            }
+          }
           if (serverData.website && Array.isArray(serverData.website)) {
             errorMessage = serverData.website.join(' ');
           } else {
@@ -862,6 +885,7 @@ export default function Profile() {
         }
       }
       
+      setFieldErrors(nextFieldErrors);
       setMessageType("error");
       setMessage(errorMessage);
     } finally {
@@ -900,6 +924,15 @@ export default function Profile() {
         </div>
       </div>
 
+      <div style={{ marginBottom: 20 }}>
+        <ProfileCompletionCard
+          completion={u.profile_completion}
+          userType={u.user_type}
+          onRetry={refreshUser}
+          retrying={profileRefreshing}
+        />
+      </div>
+
       <form className="profile-form" onSubmit={submit} style={pageStyles.form} dir="rtl" aria-busy={saving}>
         <div className="profile-sidebar" style={pageStyles.leftCol}>
           <div className="profile-avatar-card" style={pageStyles.avatarCard}>
@@ -924,6 +957,7 @@ export default function Profile() {
                 </button>
               </div>
               <div className="profile-upload-hint" style={pageStyles.hint}>JPG یا PNG · حداکثر ۶ مگابایت</div>
+              {fieldErrors.avatar && <div className="profile-field-error" role="alert">{fieldErrors.avatar}</div>}
             </div>
           </div>
 
@@ -974,6 +1008,7 @@ export default function Profile() {
                   onChange={handleInputChange} 
                   style={pageStyles.input} 
                 />
+                {fieldErrors.first_name && <div className="profile-field-error" role="alert">{fieldErrors.first_name}</div>}
               </div>
               <div style={{ flex: 1 }}>
                 <label htmlFor="last_name" style={pageStyles.label}>نام خانوادگی</label>
@@ -984,6 +1019,7 @@ export default function Profile() {
                   onChange={handleInputChange} 
                   style={pageStyles.input} 
                 />
+                {fieldErrors.last_name && <div className="profile-field-error" role="alert">{fieldErrors.last_name}</div>}
               </div>
             </div>
 
@@ -996,6 +1032,7 @@ export default function Profile() {
               style={pageStyles.input} 
               placeholder="مثال: 09123456789" 
             />
+            {fieldErrors.phone && <div className="profile-field-error" role="alert">{fieldErrors.phone}</div>}
 
             <label htmlFor="bio" style={pageStyles.label}>بیوگرافی / درباره من</label>
             <textarea 
@@ -1007,6 +1044,7 @@ export default function Profile() {
               style={pageStyles.textarea} 
               placeholder="درباره خود و تخصص‌هایتان توضیح دهید..."
             />
+            {fieldErrors.bio && <div className="profile-field-error" role="alert">{fieldErrors.bio}</div>}
 
             {isFreelancer && (
               <>
@@ -1021,6 +1059,7 @@ export default function Profile() {
                       onChange={(arr) => setForm((s) => ({ ...s, skills: arr }))} 
                       placeholder="مثال: React, Python, طراحی UI — Enter برای افزودن" 
                     />
+                    {fieldErrors.skills && <div className="profile-field-error" role="alert">{fieldErrors.skills}</div>}
                   </div>
                   <div style={{ width: 140 }}>
                     <label htmlFor="experience_years" style={pageStyles.labelSmall}>سال‌های تجربه</label>
@@ -1032,6 +1071,7 @@ export default function Profile() {
                       style={pageStyles.input} 
                       placeholder="مثال: 3" 
                     />
+                    {fieldErrors.experience_years && <div className="profile-field-error" role="alert">{fieldErrors.experience_years}</div>}
                   </div>
                 </div>
 
@@ -1042,6 +1082,7 @@ export default function Profile() {
                   onChange={(arr) => setForm((s) => ({ ...s, languages: arr }))} 
                   placeholder="مثال: فارسی، انگلیسی — Enter برای افزودن" 
                 />
+                {fieldErrors.languages && <div className="profile-field-error" role="alert">{fieldErrors.languages}</div>}
               </>
             )}
 
@@ -1056,6 +1097,7 @@ export default function Profile() {
                   onChange={(arr) => setForm((s) => ({ ...s, business_fields: arr }))} 
                   placeholder="مثال: فناوری، بازاریابی، طراحی — Enter برای افزودن" 
                 />
+                {fieldErrors.business_fields && <div className="profile-field-error" role="alert">{fieldErrors.business_fields}</div>}
 
                 <div className="profile-row-two" style={pageStyles.rowTwo}>
                   <div style={{ flex: 1 }}>
@@ -1072,6 +1114,7 @@ export default function Profile() {
                       ]}
                       placeholder="انتخاب اندازه شرکت"
                     />
+                    {fieldErrors.company_size && <div className="profile-field-error" role="alert">{fieldErrors.company_size}</div>}
                   </div>
                   <div style={{ flex: 1 }}>
                     <label htmlFor="website" style={pageStyles.labelSmall}><Globe2 size={14} aria-hidden="true" /> وب‌سایت شرکت</label>
@@ -1083,6 +1126,7 @@ export default function Profile() {
                       style={pageStyles.input} 
                       placeholder="مثال: example.com یا https://example.com" 
                     />
+                    {fieldErrors.website && <div className="profile-field-error" role="alert">{fieldErrors.website}</div>}
                   </div>
                 </div>
 
@@ -1096,6 +1140,7 @@ export default function Profile() {
                   style={pageStyles.textarea} 
                   placeholder="در مورد فعالیت‌ها و اهداف شرکت توضیح دهید..."
                 />
+                {fieldErrors.company_description && <div className="profile-field-error" role="alert">{fieldErrors.company_description}</div>}
               </>
             )}
 

@@ -1,19 +1,16 @@
-from rest_framework import generics, permissions
-from .models import Project, Proposal, ProjectMessage , Portfolio , Project, ActivityLog , Rating , Wallet
-from .serializers import ConversationSerializer, ProjectSerializer, ProposalSerializer, ProposalUpdateSerializer, ProjectMessageSerializer , ProjectCreateSerializer , ProposalCreateSerializer , ProposalSerializer , PortfolioSerializer, RatingSerializer, RatingCreateSerializer
-from .permissions import IsClient, IsOwner
+from rest_framework import generics, permissions, status
+from .models import Project, Proposal, ProjectMessage , Portfolio , ActivityLog , Rating , Wallet
+from .serializers import ConversationSerializer, ProjectSerializer, ProposalSerializer, ProposalUpdateSerializer, ProjectMessageSerializer , ProjectCreateSerializer , ProposalCreateSerializer , PortfolioSerializer, RatingSerializer, RatingCreateSerializer
+from .permissions import IsClient, IsFreelancer, IsOwner
+from users.profile_completion import require_profile_completion
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
-from rest_framework import generics, permissions
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import Count, Exists, F, OuterRef, Prefetch, Q, Subquery, Sum
 from django.conf import settings
 from django.core.files import File
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
-from django.db.models import Sum
-from rest_framework import status
-from rest_framework import generics, permissions, status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.http import FileResponse, Http404
@@ -48,6 +45,7 @@ def create_proposal_with_project_lock(serializer, user):
         if Proposal.objects.filter(project=project, freelancer=user).exists():
             raise ValidationError({"project": "You have already submitted a proposal for this project."})
 
+        require_profile_completion(user, "submit_proposal")
         return serializer.save(project=project, freelancer=user)
 
 
@@ -184,6 +182,8 @@ def proposal_create_view(request):
             {"detail": "You have already submitted a proposal for this project."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    except APIException:
+        raise
     except ValidationError:
         raise
     except Exception as exc:
@@ -227,6 +227,7 @@ def dashboard_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsClient])
 def project_create_view(request):
+    require_profile_completion(request.user, "create_project")
     serializer = ProjectCreateSerializer(data=request.data, context={'request': request})
     if serializer.is_valid():
         project = serializer.save()
@@ -255,6 +256,7 @@ class ProjectListCreateView(generics.ListCreateAPIView):
         return queryset.order_by("-created_at", "-pk")
 
     def perform_create(self, serializer):
+        require_profile_completion(self.request.user, "create_project")
         serializer.save(client=self.request.user)
 
 
@@ -289,6 +291,8 @@ class ProposalCreateView(generics.CreateAPIView):
         except IntegrityError:
             raise ValidationError({"project": "You have already submitted a proposal for this project."}) from None
         except ValidationError:
+            raise
+        except APIException:
             raise
         except Exception as exc:
             log_proposal_creation_failure(exc)
@@ -377,6 +381,14 @@ class ProjectMessageCreateView(generics.CreateAPIView):
         if sender != project.client and sender != project.hired_freelancer:
             raise PermissionDenied("شما اجازه ارسال پیام برای این پروژه را ندارید.")
 
+        participants = (project.client_id, project.hired_freelancer_id)
+        conversation_exists = ProjectMessage.objects.filter(
+            project_id=project.pk,
+            sender_id__in=participants,
+        ).exists()
+        if not conversation_exists:
+            require_profile_completion(sender, "initiate_chat")
+
         serializer.save(sender=sender)
 
 
@@ -456,7 +468,7 @@ def message_attachment_view(request, message_id):
 
 class PortfolioListCreateView(generics.ListCreateAPIView):
     serializer_class = PortfolioSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFreelancer]
 
     def get_queryset(self):
         return Portfolio.objects.filter(freelancer=self.request.user).order_by("-created_at", "-pk")
@@ -479,11 +491,12 @@ class PortfolioListCreateView(generics.ListCreateAPIView):
 class PortfolioDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Portfolio.objects.all()
     serializer_class = PortfolioSerializer
+    permission_classes = [IsFreelancer]
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_object(self):
         obj = get_object_or_404(Portfolio, pk=self.kwargs.get("pk"))
-        if self.request.method in ("GET",):
+        if self.request.method in permissions.SAFE_METHODS:
             return obj
         if obj.freelancer != self.request.user:
             raise Http404
@@ -567,7 +580,7 @@ def mark_project_messages_read(request, project_id):
         return Response({"detail": "دسترسی غیرمجاز"}, status=403)
     updated = ProjectMessage.objects.filter(
         project=project,
-        sender__user_type="freelancer",
+        sender_id=project.hired_freelancer_id,
         read=False
     ).update(read=True)
     return Response({"updated": updated})
@@ -579,7 +592,7 @@ def mark_all_project_messages_read(request):
         return Response({"detail": "Only clients can mark project messages as read."}, status=status.HTTP_403_FORBIDDEN)
     updated = ProjectMessage.objects.filter(
         project__client_id=request.user.pk,
-        sender__user_type="freelancer",
+        sender_id=F("project__hired_freelancer_id"),
         read=False,
     ).update(read=True)
     return Response({"updated": updated})

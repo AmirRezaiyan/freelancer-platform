@@ -6,9 +6,11 @@ import { formatCurrencyToToman, formatDateIran, formatProjectCategory } from "..
 import fetchAllPages from "../utils/fetchAllPages";
 import { buildProposalPayload, validateProposalBid } from "../utils/proposalPayload";
 import { mergeUniqueRecords } from "../utils/collectPaginatedResults";
+import { canCreateProject, canSubmitProposal, getProfileIncompleteDetails } from "../utils/profileCompletion";
+import ProfileCompletionCard from "../components/ProfileCompletionCard";
 
 export default function Projects() {
-  const { user } = useContext(AuthContext);
+  const { user, setUser, refreshUser, profileRefreshing } = useContext(AuthContext);
   const userId = user?.id;
   const [projects, setProjects] = useState([]);
   const [page, setPage] = useState(1);
@@ -27,6 +29,7 @@ export default function Projects() {
   const [proposal, setProposal] = useState({ cover_letter: "", bid: "" });
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
+  const [proposalGateError, setProposalGateError] = useState(null);
 
   const [ratingOpen, setRatingOpen] = useState(false);
   const [ratingProjectId, setRatingProjectId] = useState(null);
@@ -38,6 +41,8 @@ export default function Projects() {
   const [userRatings, setUserRatings] = useState({}); // { "12:34": true, "0:34": true }
   const [isNarrow, setIsNarrow] = useState(typeof window !== "undefined" ? window.innerWidth <= 1024 : false);
   const isClient = user?.user_type === "client";
+  const canCreate = canCreateProject(user);
+  const canSubmitProposalNow = canSubmitProposal(user, profileRefreshing);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -155,6 +160,7 @@ export default function Projects() {
       setMessage({ type: "error", text: "برای ارسال درخواست ابتدا وارد شوید." });
       return;
     }
+    if (!canSubmitProposalNow) return;
     if (submitting) return;
     if (!proposal.cover_letter.trim()) {
       setMessage({ type: "error", text: "متن پیشنهاد الزامی است." });
@@ -169,6 +175,7 @@ export default function Projects() {
     const bidValue = Number(proposal.bid);
     setSubmitting(true);
     setMessage(null);
+    setProposalGateError(null);
 
     try {
       api.defaults.withCredentials = true;
@@ -183,6 +190,23 @@ export default function Projects() {
       setApplyingFor(null);
       setProposal({ cover_letter: "", bid: "" });
     } catch (err) {
+      const incompleteDetails = getProfileIncompleteDetails(err);
+      if (incompleteDetails) {
+        const completion = incompleteDetails.profileCompletion || {
+          ...(user?.profile_completion || {}),
+          is_complete: false,
+          can_submit_proposal: false,
+          missing: incompleteDetails.missingFields,
+        };
+        setUser((current) => current ? { ...current, profile_completion: completion } : current);
+        setProposalGateError({
+          completion,
+          errorMessage: "برای ارسال پیشنهاد، ابتدا شرایط پایه پروفایل فریلنسری خود را تکمیل کنید.",
+        });
+        setMessage(null);
+        return;
+      }
+
       const serverData = err?.response?.data;
       let text = "خطا در ارسال درخواست";
       if (serverData) {
@@ -409,8 +433,8 @@ export default function Projects() {
             </div>
 
             {user?.user_type === "client" && (
-              <Link className="projects-create-action" to="/dashboard/projects/create" style={styles.createBtn}>
-                ساخت پروژه
+              <Link className="projects-create-action" to={canCreate ? "/dashboard/projects/create" : "/dashboard/profile"} style={styles.createBtn}>
+                {canCreate ? "ساخت پروژه" : "تکمیل پروفایل"}
               </Link>
             )}
           </div>
@@ -431,6 +455,21 @@ export default function Projects() {
           </span>
           <span>{message.text}</span>
           <button onClick={() => setMessage(null)} style={styles.alertClose}>×</button>
+        </div>
+      )}
+
+      {user?.user_type === "freelancer" && (!canSubmitProposalNow || proposalGateError) && (
+        <div style={{ margin: "0 0 18px" }}>
+          <ProfileCompletionCard
+            compact
+            completion={proposalGateError?.completion || user?.profile_completion}
+            userType={user.user_type}
+            title="برای ارسال پیشنهاد پروفایل فریلنسری را تکمیل کنید"
+            description="شرایط پایه پروفایل باید پیش از ثبت پیشنهاد تأیید شود."
+            errorMessage={proposalGateError?.errorMessage}
+            onRetry={refreshUser}
+            retrying={profileRefreshing}
+          />
         </div>
       )}
 
@@ -576,6 +615,8 @@ export default function Projects() {
                             p.status === "open" ? (
                               p.has_applied ? (
                                 <div style={{ ...styles.applyBtn, opacity: 0.6, cursor: "not-allowed", display: "inline-flex", alignItems: "center", gap: 8 }}>✅ پیشنهاد ارسال شده</div>
+                              ) : !canSubmitProposalNow ? (
+                                <Link className="project-profile-complete-action" to="/dashboard/profile" style={styles.applyBtn}>تکمیل پروفایل</Link>
                               ) : (
                                 applyingFor === p.id ? (
                                   <div style={styles.proposalForm}>

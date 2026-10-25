@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from core.upload_validation import AVATAR_EXTENSIONS, AVATAR_UPLOAD_MAX_BYTES, validate_upload
 from django.utils.translation import gettext_lazy as _
+from .profile_completion import get_profile_completion
 import json
 import collections.abc
 import re
@@ -135,9 +137,11 @@ class LoginSerializer(serializers.Serializer):
         try:
             user_obj = User.objects.get(email=email)
         except User.DoesNotExist:
+            make_password(password)
             raise serializers.ValidationError(_("ایمیل یا رمز عبور اشتباه است"))
 
-        if not user_obj.is_active or not user_obj.check_password(password):
+        password_matches = user_obj.check_password(password)
+        if not password_matches or not user_obj.is_active:
             raise serializers.ValidationError(_("ایمیل یا رمز عبور اشتباه است"))
 
         attrs["user"] = user_obj
@@ -177,6 +181,7 @@ class PublicUserSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    profile_completion = serializers.SerializerMethodField(read_only=True)
     skills_json = serializers.JSONField(write_only=True, required=False)
     languages_json = serializers.JSONField(write_only=True, required=False)
     business_fields_json = serializers.JSONField(write_only=True, required=False)
@@ -184,7 +189,7 @@ class UserSerializer(serializers.ModelSerializer):
     avatar = serializers.ImageField(required=False, allow_null=True)
     avatar_url = serializers.SerializerMethodField(read_only=True)
 
-    experience_years = serializers.IntegerField(required=False, allow_null=True)
+    experience_years = serializers.IntegerField(required=False, min_value=0)
     
     website = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=500)
 
@@ -212,8 +217,12 @@ class UserSerializer(serializers.ModelSerializer):
             "phone",
             "rating",
             "created_at",
+            "profile_completion",
         ]
         read_only_fields = ["id", "email", "user_type", "rating", "created_at"]
+
+    def get_profile_completion(self, obj):
+        return get_profile_completion(obj)
 
     def get_avatar_url(self, obj):
         request = self.context.get("request") if isinstance(self.context, dict) else None
@@ -260,93 +269,63 @@ class UserSerializer(serializers.ModelSerializer):
     def _split_like_human(self, text):
         return [s.strip() for s in re.split(r"[\s,،]+", text) if s.strip()]
 
+    def _coerce_profile_list(self, value, field_name):
+        if not isinstance(value, str):
+            return value
+
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            if text.startswith(("[", "{")):
+                raise serializers.ValidationError({field_name: "Expected a list of strings."}) from None
+            return self._split_like_human(text)
+
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, str):
+            return self._split_like_human(parsed)
+        raise serializers.ValidationError({field_name: "Expected a list of strings."})
+
+    def _coerce_json_list_alias(self, value, field_name):
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError({field_name: "Expected a JSON list."}) from None
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        raise serializers.ValidationError({field_name: "Expected a JSON list."})
+
+    def _validate_profile_list(self, value, field_name):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Expected a list of strings.")
+        if any(not isinstance(item, str) for item in value):
+            raise serializers.ValidationError("List entries must be strings.")
+        return [item.strip() for item in value if item.strip()]
+
     def to_internal_value(self, data):
         mutable = self._to_mutable_dict(data)
 
-        skills = mutable.get("skills")
-        if isinstance(skills, list):
-            mutable["skills"] = skills
-        elif isinstance(skills, str) and skills.strip() != "":
-            try:
-                parsed = json.loads(skills)
-                if isinstance(parsed, list):
-                    mutable["skills"] = parsed
-                else:
-                    mutable["skills"] = self._split_like_human(skills)
-            except Exception:
-                mutable["skills"] = self._split_like_human(skills)
+        for field_name in ("skills", "languages", "business_fields"):
+            if field_name in mutable:
+                mutable[field_name] = self._coerce_profile_list(mutable[field_name], field_name)
 
-        langs = mutable.get("languages")
-        if isinstance(langs, list):
-            mutable["languages"] = langs
-        elif isinstance(langs, str) and langs.strip() != "":
-            try:
-                parsed = json.loads(langs)
-                if isinstance(parsed, list):
-                    mutable["languages"] = parsed
-                else:
-                    mutable["languages"] = self._split_like_human(langs)
-            except Exception:
-                mutable["languages"] = self._split_like_human(langs)
-                
-        business_fields = mutable.get("business_fields")
-        if isinstance(business_fields, list):
-            mutable["business_fields"] = business_fields
-        elif isinstance(business_fields, str) and business_fields.strip() != "":
-            try:
-                parsed = json.loads(business_fields)
-                if isinstance(parsed, list):
-                    mutable["business_fields"] = parsed
-                else:
-                    mutable["business_fields"] = self._split_like_human(business_fields)
-            except Exception:
-                mutable["business_fields"] = self._split_like_human(business_fields)
-
-        sj = mutable.get("skills_json")
-        if sj is not None and sj != "":
-            if isinstance(sj, (list, tuple)):
-                mutable["skills"] = list(sj)
-            elif isinstance(sj, str):
-                try:
-                    parsed = json.loads(sj)
-                    if isinstance(parsed, list):
-                        mutable["skills"] = parsed
-                except Exception:
-                    pass
-                    
-        lj = mutable.get("languages_json")
-        if lj is not None and lj != "":
-            if isinstance(lj, (list, tuple)):
-                mutable["languages"] = list(lj)
-            elif isinstance(lj, str):
-                try:
-                    parsed = json.loads(lj)
-                    if isinstance(parsed, list):
-                        mutable["languages"] = parsed
-                except Exception:
-                    pass
-                    
-        bfj = mutable.get("business_fields_json")
-        if bfj is not None and bfj != "":
-            if isinstance(bfj, (list, tuple)):
-                mutable["business_fields"] = list(bfj)
-            elif isinstance(bfj, str):
-                try:
-                    parsed = json.loads(bfj)
-                    if isinstance(parsed, list):
-                        mutable["business_fields"] = parsed
-                except Exception:
-                    pass
+        for alias, field_name in (
+            ("skills_json", "skills"),
+            ("languages_json", "languages"),
+            ("business_fields_json", "business_fields"),
+        ):
+            alias_value = mutable.get(alias)
+            if alias_value not in (None, ""):
+                mutable[field_name] = self._coerce_json_list_alias(alias_value, alias)
 
         if "experience_years" in mutable:
             val = mutable.get("experience_years")
-            if val in ("", None):
+            if val == "":
                 mutable.pop("experience_years", None)
-            else:
-                try:
-                    mutable["experience_years"] = int(str(val))
-                except Exception:
-                    pass
                     
         if "company_size" in mutable:
             val = mutable.get("company_size")
@@ -357,11 +336,11 @@ class UserSerializer(serializers.ModelSerializer):
                 
         if "website" in mutable:
             website = mutable.get("website")
-            if website and website.strip():
+            if isinstance(website, str) and website.strip():
                 if not website.startswith(('http://', 'https://')):
                     website = 'https://' + website
                 mutable["website"] = website
-            else:
+            elif website in ("", None):
                 mutable["website"] = None
 
         return super().to_internal_value(mutable)
@@ -382,6 +361,15 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("لطفاً یک آدرس معتبر وارد کنید (مثال: https://example.com)")
         
         return value
+
+    def validate_skills(self, value):
+        return self._validate_profile_list(value, "skills")
+
+    def validate_languages(self, value):
+        return self._validate_profile_list(value, "languages")
+
+    def validate_business_fields(self, value):
+        return self._validate_profile_list(value, "business_fields")
 
     def update(self, instance, validated_data):
         validated_data.pop("skills_json", None)

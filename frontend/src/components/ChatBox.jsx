@@ -7,6 +7,8 @@ import ResilientImage from "./ResilientImage";
 import { AuthContext } from "../context/auth-context";
 import api from "../api/axios";
 import fetchAllPages from "../utils/fetchAllPages";
+import ProfileCompletionCard from "./ProfileCompletionCard";
+import { canSendConversationMessage, getProfileIncompleteDetails, hasParticipantMessageHistory } from "../utils/profileCompletion";
 
 
 const styles = {
@@ -604,7 +606,7 @@ const renderStatusBadge = (status) => {
 };
 
 export default function ChatBox({ projectId, autoRefresh = false, currentUserType }) {
-  const { user } = useContext(AuthContext);
+  const { user, setUser, refreshUser, profileRefreshing } = useContext(AuthContext);
   const currentUser = user?.user ?? user ?? null;
   const myId = currentUser?.id ?? currentUser?.pk ?? null;
 
@@ -615,6 +617,9 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   const [loading, setLoading] = useState(true);
   const [messageError, setMessageError] = useState(null);
   const [sendError, setSendError] = useState(null);
+  const [profileGateError, setProfileGateError] = useState(null);
+  const [messageHistoryState, setMessageHistoryState] = useState("loading");
+  const [projectAccessState, setProjectAccessState] = useState("loading");
   const [olderPage, setOlderPage] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
@@ -672,10 +677,12 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     
     try {
       setLoadingCounterparty(true);
+      setProjectAccessState("loading");
       
       const projectRes = await api.get(`/market/projects/${projectId}/`);
       const projectData = projectRes.data;
       setProjectInfo(projectData);
+      setProjectAccessState(projectData?.hired_freelancer ? "loaded" : "denied");
       
       let counterpartyId = null;
       let counterpartyRole = "";
@@ -746,6 +753,8 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       }
     } catch (err) {
       console.error("Error loading project info:", err?.response?.status);
+      const status = err?.response?.status;
+      setProjectAccessState(status === 401 || status === 403 || status === 404 ? "denied" : "error");
     } finally {
       setLoadingCounterparty(false);
     }
@@ -755,6 +764,10 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     mountedRef.current = true;
     setMessages([]);
     setOlderPage(null);
+    setProjectAccessState("loading");
+    setMessageHistoryState("loading");
+    setProfileGateError(null);
+    setSendError(null);
     setProjectInfo(null);
     setCounterpartyInfo(null);
     setCounterpartyRating({ rating: 0, count: 0 });
@@ -859,6 +872,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     try {
       const res = await MessagesAPI.list(projectId, 1);
       const data = Array.isArray(res) ? res : res?.results ?? res?.data ?? res;
+      if (mountedRef.current) setMessageHistoryState("loaded");
       if (withLoading && mountedRef.current) setOlderPage(res?.next ? 2 : null);
       const mapped = (data || []).map(mapMessage).filter(Boolean);
 
@@ -895,8 +909,12 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
       }
     } catch (err) {
       console.error("loadMessages", err?.response?.status);
-      if (err?.response?.status === 403 || err?.response?.status === 401) {
+      const status = err?.response?.status;
+      if (status === 403 || status === 401) {
+        if (mountedRef.current) setMessageHistoryState("denied");
         if (mountedRef.current) setMessages([]);
+      } else if (mountedRef.current) {
+        setMessageHistoryState("error");
       }
       if (mountedRef.current) setMessageError("بارگذاری پیام‌ها انجام نشد. دوباره تلاش کنید.");
     } finally {
@@ -963,12 +981,34 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const hasConversationHistory = hasParticipantMessageHistory(messages, projectInfo);
+  const conversationHistoryState = messageHistoryState === "denied" || projectAccessState === "denied"
+    ? "denied"
+    : messageHistoryState === "error" || projectAccessState === "error"
+      ? "error"
+      : messageHistoryState === "loaded" && projectAccessState === "loaded"
+        ? "loaded"
+        : "loading";
+
   const send = async (e) => {
     e?.preventDefault();
     if ((!text.trim() && !file) || !projectId) return;
+    const canSend = canSendConversationMessage(currentUser, hasConversationHistory, conversationHistoryState);
+    if (!canSend) {
+      setProfileGateError({
+        completion: currentUser?.profile_completion || null,
+        errorMessage: messageHistoryState === "denied"
+          ? "دسترسی به این گفتگو مجاز نیست."
+          : currentUser?.profile_completion?.can_initiate_chat === false
+            ? "برای شروع گفتگوی جدید، ابتدا شرایط پایه پروفایل خود را تکمیل کنید."
+            : "وضعیت پروفایل هنوز تأیید نشده است؛ دوباره بررسی کنید.",
+      });
+      return;
+    }
 
     setSending(true);
     setSendError(null);
+    setProfileGateError(null);
     try {
       const res = await MessagesAPI.send(projectId, text.trim(), file);
       const serverMsg = res?.data ?? res;
@@ -992,9 +1032,24 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
     } catch (err) {
       console.error("send message", err?.response?.status);
       const status = err?.response?.status;
-      setSendError(status === 403
-        ? "ارسال پیام در این گفتگو مجاز نیست."
-        : "ارسال پیام انجام نشد. متن را نگه داشتیم؛ دوباره تلاش کنید.");
+      const incompleteDetails = getProfileIncompleteDetails(err);
+      if (incompleteDetails) {
+        const completion = incompleteDetails.profileCompletion || {
+          ...(currentUser?.profile_completion || {}),
+          is_complete: false,
+          can_initiate_chat: false,
+          missing: incompleteDetails.missingFields,
+        };
+        setUser(currentUser ? { ...currentUser, profile_completion: completion } : currentUser);
+        setProfileGateError({
+          completion,
+          errorMessage: "برای ارسال پیام نخست، ابتدا شرایط پایه پروفایل خود را تکمیل کنید.",
+        });
+      } else {
+        setSendError(status === 403
+          ? "ارسال پیام در این گفتگو مجاز نیست."
+          : "ارسال پیام انجام نشد. متن را نگه داشتیم؛ دوباره تلاش کنید.");
+      }
     } finally {
       setSending(false);
     }
@@ -1010,6 +1065,11 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
   const sendSticker = (sticker) => {
     setText((prev) => prev + sticker);
   };
+
+  const canSend = canSendConversationMessage(currentUser, hasConversationHistory, conversationHistoryState);
+  const needsProfileForFirstMessage = conversationHistoryState === "loaded"
+    && !hasConversationHistory
+    && currentUser?.profile_completion?.can_initiate_chat !== true;
 
   const openImageViewer = (url, name) => {
     setImageViewer({ open: true, url, name });
@@ -1302,6 +1362,32 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
         </div>
       )}
 
+      {needsProfileForFirstMessage && (
+        <ProfileCompletionCard
+          compact
+          completion={profileGateError?.completion || currentUser?.profile_completion}
+          userType={currentUser?.user_type}
+          title="برای آغاز گفتگو پروفایل را تکمیل کنید"
+          description="این پروژه فقط برای کارفرما و فریلنسر استخدام‌شده در دسترس است."
+          errorMessage={profileGateError?.errorMessage || (currentUser?.profile_completion?.can_initiate_chat === false
+            ? "برای شروع گفتگوی جدید، شرایط پایه پروفایل خود را تکمیل کنید."
+            : "وضعیت پروفایل هنوز تأیید نشده است.")}
+          onRetry={refreshUser}
+          retrying={profileRefreshing}
+        />
+      )}
+      {profileGateError && !needsProfileForFirstMessage && (
+        <ProfileCompletionCard
+          compact
+          completion={profileGateError.completion}
+          userType={currentUser?.user_type}
+          title="ارسال پیام نخست امکان‌پذیر نیست"
+          description="شرایط پایه پروفایل باید پیش از آغاز گفتگو تکمیل شود."
+          errorMessage={profileGateError.errorMessage}
+          onRetry={refreshUser}
+          retrying={profileRefreshing}
+        />
+      )}
       {sendError && <div className="chat-send-error" role="alert">{sendError}</div>}
       <form className="chat-composer" onSubmit={send} style={styles.inputArea}>
         <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: "none" }} />
@@ -1312,6 +1398,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           style={styles.iconBtn}
           aria-label="افزودن پیوست"
           title="افزودن فایل (زیر ۲۵ مگابایت)"
+          disabled={!canSend}
         >
           <Paperclip size={20} />
         </button>
@@ -1322,6 +1409,7 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           style={{ ...styles.iconBtn, color: showStickers ? "#fbbf24" : "#9ca3af" }}
           aria-label="افزودن شکلک"
           aria-expanded={showStickers}
+          disabled={!canSend}
         >
           <Smile size={20} />
         </button>
@@ -1333,18 +1421,18 @@ export default function ChatBox({ projectId, autoRefresh = false, currentUserTyp
           style={{ ...styles.input, direction: "rtl", textAlign: "right", minWidth: 0, minHeight: 42, maxHeight: 120, resize: "vertical" }}
           placeholder="پیام خود را بنویسید..."
           aria-label="پیام خود را بنویسید"
-          disabled={sending || loading}
+          disabled={sending || loading || !canSend}
           dir="rtl"
         />
 
         <button
           type="submit"
           aria-label={sending ? "در حال ارسال پیام" : "ارسال پیام"}
-          disabled={sending || loading || (!text.trim() && !file)}
+          disabled={sending || loading || !canSend || (!text.trim() && !file)}
           style={{
             ...styles.sendBtn,
-            opacity: sending || loading || (!text.trim() && !file) ? 0.5 : 1,
-            cursor: sending || loading || (!text.trim() && !file) ? "not-allowed" : "pointer",
+            opacity: sending || loading || !canSend || (!text.trim() && !file) ? 0.5 : 1,
+            cursor: sending || loading || !canSend || (!text.trim() && !file) ? "not-allowed" : "pointer",
           }}
         >
           {sending ? <div style={styles.spinner} /> : <Send size={18} style={{ transform: "rotate(180deg)" }} />}

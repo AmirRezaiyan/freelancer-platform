@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Count, Exists, OuterRef, Q, Subquery
+from django.db.models import Count, Exists, F, OuterRef, Q, Subquery
 
 from .models import Wallet, Proposal, ProjectMessage, Portfolio, Project, ActivityLog
 from .serializers import ActivitySerializer, PortfolioSerializer, ProjectSerializer
@@ -36,7 +36,7 @@ class UnreadMessagesView(APIView):
     def get(self, request):
         unread = ProjectMessage.objects.filter(
             project__client=request.user,
-            sender__user_type="freelancer",
+            sender_id=F("project__hired_freelancer_id"),
             read=False
         ).count()
         return Response({"unread": unread})

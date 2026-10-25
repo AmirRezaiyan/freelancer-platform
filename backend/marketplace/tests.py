@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from .models import Project, Proposal, ProjectMessage, Portfolio, Wallet, ActivityLog, Rating
 from .serializers import ProjectSerializer
+from .permissions import IsClient
 from rest_framework.test import APIClient, APIRequestFactory
 from unittest import skipUnless
 from unittest.mock import patch
@@ -25,6 +26,19 @@ from core.upload_validation import (
 )
 
 User = get_user_model()
+
+
+def complete_profile_for_test(user):
+	user.first_name = "Ada"
+	user.last_name = "Lovelace"
+	user.bio = "A sufficiently descriptive profile biography."
+	if user.user_type == "freelancer":
+		user.skills = ["Python"]
+	else:
+		user.business_fields = ["Software"]
+	user.save()
+	return user
+
 
 class ProjectModelTest(TestCase):
 	def setUp(self):
@@ -97,6 +111,8 @@ class MarketplaceAuthorizationAPITests(TestCase):
 		self.other_client = User.objects.create_user(email="other-client@test.com", password="pass", user_type="client")
 		self.freelancer = User.objects.create_user(email="freelancer@test.com", password="pass", user_type="freelancer")
 		self.other_freelancer = User.objects.create_user(email="other-freelancer@test.com", password="pass", user_type="freelancer")
+		complete_profile_for_test(self.freelancer)
+		complete_profile_for_test(self.other_freelancer)
 		self.project = self.create_project()
 		self.proposal = Proposal.objects.create(
 			project=self.project,
@@ -115,6 +131,19 @@ class MarketplaceAuthorizationAPITests(TestCase):
 			category="web",
 			client=client or self.client_user,
 		)
+
+	def test_client_permission_denies_unsafe_methods_for_nonclients(self):
+		factory = APIRequestFactory()
+		permission = IsClient()
+		for method in ("post", "put", "patch", "delete"):
+			request = getattr(factory, method)("/api/market/projects/")
+			request.user = self.freelancer
+			with self.subTest(method=method):
+				self.assertFalse(permission.has_permission(request, None))
+
+		get_request = factory.get("/api/market/projects/")
+		get_request.user = self.freelancer
+		self.assertTrue(permission.has_permission(get_request, None))
 
 	def test_anonymous_user_cannot_list_project_proposals(self):
 		response = self.api.get(f"/api/market/projects/{self.project.id}/proposals/")
@@ -385,19 +414,34 @@ class MarketplaceAuthorizationAPITests(TestCase):
 			ProjectMessage(project=project, sender=self.freelancer, message="Unread", read=False)
 			for project in projects
 		])
+		unrelated_message = ProjectMessage.objects.create(
+			project=projects[0],
+			sender=self.other_freelancer,
+			message="Unrelated sender",
+			read=False,
+		)
+		foreign_project = self.create_project(client=self.other_client)
+		foreign_project.hired_freelancer = self.other_freelancer
+		foreign_project.status = "in_progress"
+		foreign_project.save(update_fields=["hired_freelancer", "status"])
 		foreign_message = ProjectMessage.objects.create(
-			project=self.create_project(client=self.other_client),
+			project=foreign_project,
 			sender=self.other_freelancer,
 			message="Foreign unread",
 			read=False,
 		)
 		self.api.force_authenticate(user=self.client_user)
+		unread_response = self.api.get("/api/market/messages/unread/")
+		self.assertEqual(unread_response.status_code, 200)
+		self.assertEqual(unread_response.data["unread"], 21)
 
 		response = self.api.post("/api/market/messages/mark-all-read/")
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.data["updated"], 21)
 		self.assertFalse(ProjectMessage.objects.filter(pk__in=[message.pk for message in own_messages], read=False).exists())
+		unrelated_message.refresh_from_db()
+		self.assertFalse(unrelated_message.read)
 		foreign_message.refresh_from_db()
 		self.assertFalse(foreign_message.read)
 		self.api.force_authenticate(user=self.freelancer)
@@ -435,7 +479,38 @@ class MarketplaceAuthorizationAPITests(TestCase):
 				response = self.api.post(path, payload, format="json")
 				self.assertEqual(response.status_code, 403)
 
+	def test_anonymous_user_cannot_create_project_through_either_route(self):
+		payload = {
+			"title": "Anonymous project",
+			"description": "Description",
+			"category": "web",
+		}
+
+		for path in ("/api/market/projects/", "/api/market/projects/create/"):
+			with self.subTest(path=path):
+				self.assertEqual(self.api.post(path, payload, format="json").status_code, 401)
+
+	def test_incomplete_client_cannot_create_project_through_either_route(self):
+		self.api.force_authenticate(user=self.client_user)
+		payload = {
+			"title": "Incomplete client project",
+			"description": "Description",
+			"category": "web",
+		}
+		project_count = Project.objects.count()
+
+		for path in ("/api/market/projects/", "/api/market/projects/create/"):
+			with self.subTest(path=path):
+				response = self.api.post(path, payload, format="json")
+				self.assertEqual(response.status_code, 403)
+				self.assertEqual(str(response.data["code"]), "profile_incomplete")
+				self.assertIn("first_name", response.data["missing"])
+				self.assertEqual(response.data["edit_profile"], "/dashboard/profile")
+
+		self.assertEqual(Project.objects.count(), project_count)
+
 	def test_client_can_create_project_through_both_routes(self):
+		complete_profile_for_test(self.client_user)
 		self.api.force_authenticate(user=self.client_user)
 		payload = {
 			"title": "Client project",
@@ -443,13 +518,58 @@ class MarketplaceAuthorizationAPITests(TestCase):
 			"budget_min": 100,
 			"budget_max": 200,
 			"category": "web",
+			"skills": ["Python", "Django"],
+			"client": self.other_client.id,
+			"status": "completed",
+			"hired_freelancer": self.freelancer.id,
 		}
 
 		for path in ("/api/market/projects/", "/api/market/projects/create/"):
 			with self.subTest(path=path):
 				response = self.api.post(path, payload, format="json")
 				self.assertEqual(response.status_code, 201)
-				self.assertEqual(Project.objects.get(pk=response.data["id"]).client, self.client_user)
+				project = Project.objects.get(pk=response.data["id"])
+				self.assertEqual(project.client, self.client_user)
+				self.assertEqual(project.status, "open")
+				self.assertIsNone(project.hired_freelancer)
+				self.assertEqual(project.skills, ["Python", "Django"])
+
+	def test_project_skills_require_string_arrays_on_create_and_update(self):
+		complete_profile_for_test(self.client_user)
+		self.api.force_authenticate(user=self.client_user)
+		payload = {
+			"title": "Skills validation project",
+			"description": "Description",
+			"category": "web",
+		}
+		invalid_skills = ("Python", {"skill": "Python"}, None, ["Python", 1])
+		initial_project_count = Project.objects.count()
+
+		for path in ("/api/market/projects/", "/api/market/projects/create/"):
+			for skills in invalid_skills:
+				with self.subTest(path=path, skills=skills):
+					response = self.api.post(path, {**payload, "skills": skills}, format="json")
+					self.assertEqual(response.status_code, 400)
+
+		self.assertEqual(Project.objects.count(), initial_project_count)
+		project = self.create_project()
+		for skills in invalid_skills:
+			with self.subTest(update_skills=skills):
+				response = self.api.patch(
+					f"/api/market/projects/{project.pk}/",
+					{"skills": skills},
+					format="json",
+				)
+				self.assertEqual(response.status_code, 400)
+
+		valid_response = self.api.patch(
+			f"/api/market/projects/{project.pk}/",
+			{"skills": [" Python ", "", "Django"]},
+			format="json",
+		)
+		self.assertEqual(valid_response.status_code, 200)
+		project.refresh_from_db()
+		self.assertEqual(project.skills, ["Python", "Django"])
 
 	def test_proposal_status_cannot_be_supplied_by_request(self):
 		for index, (freelancer, requested_status) in enumerate(
@@ -559,6 +679,8 @@ class MarketplaceProposalIntegrityTests(TestCase):
 		self.client_user = User.objects.create_user(email="integrity-client@test.com", password="pass", user_type="client")
 		self.freelancer = User.objects.create_user(email="integrity-freelancer@test.com", password="pass", user_type="freelancer")
 		self.other_freelancer = User.objects.create_user(email="integrity-other@test.com", password="pass", user_type="freelancer")
+		complete_profile_for_test(self.freelancer)
+		complete_profile_for_test(self.other_freelancer)
 		self.project = Project.objects.create(
 			title="Budgeted project",
 			description="Project description",
@@ -588,6 +710,127 @@ class MarketplaceProposalIntegrityTests(TestCase):
 				)
 				self.assertEqual(response.status_code, 403)
 		self.assertFalse(Proposal.objects.filter(project=self.project).exists())
+
+	def test_unknown_role_cannot_submit_a_proposal(self):
+		unknown_user = User.objects.create_user(
+			email="unknown-role-proposer@test.com",
+			password="pass",
+			user_type="unknown",
+			first_name="Ada",
+			last_name="Lovelace",
+			bio="A sufficiently long profile biography.",
+			skills=["Python"],
+		)
+		self.api.force_authenticate(user=unknown_user)
+
+		for path in ("/api/market/proposals/", "/api/market/proposals/create/"):
+			with self.subTest(path=path):
+				response = self.api.post(
+					path,
+					{"project": self.project.pk, "message": "Proposal", "bid_amount": 150},
+					format="json",
+				)
+				self.assertEqual(response.status_code, 403)
+		self.assertFalse(Proposal.objects.filter(project=self.project).exists())
+
+	def test_incomplete_freelancer_can_view_and_edit_existing_proposal(self):
+		incomplete_freelancer = User.objects.create_user(
+			email="incomplete-existing-proposal@test.com",
+			password="pass",
+			user_type="freelancer",
+		)
+		proposal = Proposal.objects.create(
+			project=self.project,
+			freelancer=incomplete_freelancer,
+			message="Existing proposal",
+			bid_amount=150,
+		)
+		self.api.force_authenticate(user=incomplete_freelancer)
+
+		list_response = self.api.get("/api/market/proposals/mine/")
+		update_response = self.api.patch(
+			f"/api/market/proposals/{proposal.pk}/",
+			{"message": "Updated while profile is incomplete"},
+			format="json",
+		)
+
+		self.assertEqual(list_response.status_code, 200)
+		self.assertEqual(list_response.data["count"], 1)
+		self.assertEqual(update_response.status_code, 200)
+		proposal.refresh_from_db()
+		self.assertEqual(proposal.message, "Updated while profile is incomplete")
+
+	def test_anonymous_users_cannot_submit_through_either_route(self):
+		self.api.force_authenticate(user=None)
+		for path in ("/api/market/proposals/", "/api/market/proposals/create/"):
+			with self.subTest(path=path):
+				response = self.api.post(
+					path,
+					{"project": self.project.pk, "message": "Proposal", "bid_amount": 150},
+					format="json",
+				)
+				self.assertEqual(response.status_code, 401)
+		self.assertFalse(Proposal.objects.filter(project=self.project).exists())
+
+	def test_each_missing_freelancer_requirement_blocks_both_creation_routes(self):
+		incomplete_profiles = (
+			("first_name", {"first_name": "  "}),
+			("last_name", {"last_name": "\t"}),
+			("bio", {"bio": "x" * 29}),
+			("skills", {"skills": []}),
+		)
+
+		for missing_field, updates in incomplete_profiles:
+			freelancer = User.objects.create_user(
+				email=f"incomplete-{missing_field}@proposal.test",
+				password="pass",
+				user_type="freelancer",
+			)
+			complete_profile_for_test(freelancer)
+			for field, value in updates.items():
+				setattr(freelancer, field, value)
+			freelancer.save()
+			self.api.force_authenticate(user=freelancer)
+			for path in ("/api/market/proposals/", "/api/market/proposals/create/"):
+				with self.subTest(missing=missing_field, path=path):
+					response = self.api.post(
+						path,
+						{"project": self.project.pk, "message": "Proposal", "bid_amount": 150},
+						format="json",
+					)
+					self.assertEqual(response.status_code, 403)
+					self.assertEqual(response.data["code"], "profile_incomplete")
+					self.assertIn(missing_field, response.data["missing"])
+					self.assertEqual(response.data["edit_profile"], "/dashboard/profile")
+			self.assertFalse(Proposal.objects.filter(project=self.project, freelancer=freelancer).exists())
+
+	def test_complete_freelancer_can_submit_both_routes_without_forging_protected_fields(self):
+		for index, path in enumerate(("/api/market/proposals/", "/api/market/proposals/create/")):
+			project = self.project if index == 0 else Project.objects.create(
+				title="Second eligible project",
+				description="Project description",
+				budget_min=100,
+				budget_max=200,
+				category="web",
+				client=self.client_user,
+			)
+			self.api.force_authenticate(user=self.freelancer)
+			response = self.api.post(
+				path,
+				{
+					"project": project.pk,
+					"message": "Eligible proposal",
+					"bid_amount": 150,
+					"freelancer": self.other_freelancer.pk,
+					"status": "accepted",
+				},
+				format="json",
+			)
+			self.assertEqual(response.status_code, 201)
+			proposal = Proposal.objects.get(pk=response.data["id"])
+			self.assertEqual(proposal.freelancer, self.freelancer)
+			self.assertEqual(proposal.project, project)
+			self.assertEqual(proposal.status, "pending")
 
 	def test_freelancer_cannot_propose_on_own_project(self):
 		self_owned_project = Project.objects.create(
@@ -667,6 +910,7 @@ class MarketplaceProposalIntegrityTests(TestCase):
 		self.assertEqual(proposal.status, "pending")
 
 	def test_optional_budget_bounds_can_be_created_independently(self):
+		complete_profile_for_test(self.client_user)
 		self.api.force_authenticate(user=self.client_user)
 		payload = {
 			"title": "One-sided budget",
@@ -744,6 +988,7 @@ class MarketplaceProposalIntegrityTests(TestCase):
 		self.assertEqual(maximum_only_valid.status_code, 201)
 
 	def test_project_creation_rejects_contradictory_budgets(self):
+		complete_profile_for_test(self.client_user)
 		self.api.force_authenticate(user=self.client_user)
 		payload = {
 			"title": "Invalid budget",
@@ -1224,6 +1469,9 @@ class MarketplacePrivateAttachmentTests(TestCase):
 		self.client_user = User.objects.create_user(email="file-client@test.com", password="pass", user_type="client")
 		self.freelancer = User.objects.create_user(email="file-freelancer@test.com", password="pass", user_type="freelancer")
 		self.outsider = User.objects.create_user(email="file-outsider@test.com", password="pass", user_type="freelancer")
+		complete_profile_for_test(self.client_user)
+		complete_profile_for_test(self.freelancer)
+		complete_profile_for_test(self.outsider)
 		self.project = self.make_project("Project with file", self.client_user, self.freelancer)
 		self.other_project = self.make_project("Other project", self.outsider, self.other_freelancer())
 		self.api = APIClient()
@@ -1235,7 +1483,9 @@ class MarketplacePrivateAttachmentTests(TestCase):
 		self.temp_storage.cleanup()
 
 	def other_freelancer(self):
-		return User.objects.create_user(email="file-other-hired@test.com", password="pass", user_type="freelancer")
+		return complete_profile_for_test(
+			User.objects.create_user(email="file-other-hired@test.com", password="pass", user_type="freelancer")
+		)
 
 	def make_project(self, title, client, freelancer):
 		return Project.objects.create(
@@ -1310,16 +1560,98 @@ class MarketplacePrivateAttachmentTests(TestCase):
 		message = ProjectMessage.objects.get(pk=response.data["id"])
 		self.assertEqual(message.sender, self.freelancer)
 		self.assertFalse(message.read)
+		unrelated_message = ProjectMessage.objects.create(
+			project=self.project,
+			sender=self.outsider,
+			message="Unrelated sender",
+			read=False,
+		)
 
 		self.api.force_authenticate(user=self.client_user)
 		read_response = self.api.post(f"/api/market/messages/{self.project.id}/mark-read/")
 		self.assertEqual(read_response.status_code, 200)
+		self.assertEqual(read_response.data["updated"], 1)
 		message.refresh_from_db()
 		self.assertTrue(message.read)
+		unrelated_message.refresh_from_db()
+		self.assertFalse(unrelated_message.read)
 
 		self.api.force_authenticate(user=self.outsider)
 		forbidden_response = self.api.post(f"/api/market/messages/{self.project.id}/mark-read/")
 		self.assertEqual(forbidden_response.status_code, 403)
+
+	def test_incomplete_profiles_cannot_initiate_messages_for_either_role(self):
+		incomplete_client = User.objects.create_user(
+			email="incomplete-message-client@test.com",
+			password="pass",
+			user_type="client",
+		)
+		client_project = self.make_project("Incomplete client project", incomplete_client, self.freelancer)
+		ProjectMessage.objects.create(project=client_project, sender=self.outsider, message="Unrelated history")
+		self.api.force_authenticate(user=incomplete_client)
+		client_response = self.api.post(
+			"/api/market/user_messages/create/",
+			{"project": client_project.pk, "message": "Start conversation"},
+			format="json",
+		)
+
+		incomplete_freelancer = User.objects.create_user(
+			email="incomplete-message-freelancer@test.com",
+			password="pass",
+			user_type="freelancer",
+		)
+		freelancer_project = self.make_project("Incomplete freelancer project", self.client_user, incomplete_freelancer)
+		ProjectMessage.objects.create(project=freelancer_project, sender=self.outsider, message="Unrelated history")
+		self.api.force_authenticate(user=incomplete_freelancer)
+		freelancer_response = self.api.post(
+			"/api/market/user_messages/create/",
+			{"project": freelancer_project.pk, "message": "Start conversation"},
+			format="json",
+		)
+
+		for response in (client_response, freelancer_response):
+			self.assertEqual(response.status_code, 403)
+			self.assertEqual(str(response.data["code"]), "profile_incomplete")
+		self.assertFalse(ProjectMessage.objects.filter(project=client_project, sender=incomplete_client).exists())
+		self.assertFalse(ProjectMessage.objects.filter(project=freelancer_project, sender=incomplete_freelancer).exists())
+
+	def test_incomplete_participant_can_reply_to_an_established_conversation(self):
+		self.api.force_authenticate(user=self.client_user)
+		first_message = self.api.post(
+			"/api/market/user_messages/create/",
+			{"project": self.project.pk, "message": "Conversation already started"},
+			format="json",
+		)
+		self.assertEqual(first_message.status_code, 201)
+
+		self.freelancer.bio = "  "
+		self.freelancer.save(update_fields=["bio"])
+		self.api.force_authenticate(user=self.freelancer)
+		reply = self.api.post(
+			"/api/market/user_messages/create/",
+			{"project": self.project.pk, "message": "Reply in established conversation"},
+			format="json",
+		)
+
+		self.assertEqual(reply.status_code, 201)
+		self.assertEqual(ProjectMessage.objects.filter(project=self.project).count(), 2)
+
+	def test_anonymous_and_unrelated_users_cannot_initiate_messages(self):
+		self.api.force_authenticate(user=None)
+		anonymous_response = self.api.post(
+			"/api/market/user_messages/create/",
+			{"project": self.project.pk, "message": "No access"},
+			format="json",
+		)
+		self.api.force_authenticate(user=self.outsider)
+		unrelated_response = self.api.post(
+			"/api/market/user_messages/create/",
+			{"project": self.project.pk, "message": "No access"},
+			format="json",
+		)
+
+		self.assertEqual(anonymous_response.status_code, 401)
+		self.assertEqual(unrelated_response.status_code, 403)
 
 	def test_message_list_query_count_does_not_grow_with_message_count(self):
 		self.api.force_authenticate(user=self.client_user)
@@ -1383,6 +1715,7 @@ class PortfolioAndAvatarUploadTests(TestCase):
 		self.media_settings = override_settings(MEDIA_ROOT=self.media_directory.name)
 		self.media_settings.enable()
 		self.freelancer = User.objects.create_user(email="upload-freelancer@test.com", password="pass", user_type="freelancer")
+		self.client_user = User.objects.create_user(email="upload-client@test.com", password="pass", user_type="client")
 		self.api = APIClient()
 		self.api.force_authenticate(user=self.freelancer)
 
@@ -1446,3 +1779,97 @@ class PortfolioAndAvatarUploadTests(TestCase):
 
 		self.assertEqual(portfolio_response.status_code, 400)
 		self.assertEqual(avatar_response.status_code, 400)
+
+	def test_clients_cannot_create_or_modify_freelancer_portfolios(self):
+		self.api.force_authenticate(user=self.client_user)
+		create_response = self.api.post(
+			"/api/market/portfolio/",
+			{"title": "Client portfolio", "description": "Not allowed"},
+			format="json",
+		)
+		portfolio = Portfolio.objects.create(
+			freelancer=self.client_user,
+			title="Legacy record",
+			description="Must not be writable by a client account.",
+		)
+		update_response = self.api.patch(
+			f"/api/market/portfolio/{portfolio.pk}/",
+			{"title": "Changed"},
+			format="json",
+		)
+
+		self.assertEqual(create_response.status_code, 403)
+		self.assertEqual(update_response.status_code, 403)
+		portfolio.refresh_from_db()
+		self.assertEqual(portfolio.title, "Legacy record")
+
+	def test_public_portfolio_detail_remains_readable(self):
+		portfolio = Portfolio.objects.create(
+			freelancer=self.freelancer,
+			title="Public sample",
+			description="Public portfolio description.",
+		)
+		self.api.force_authenticate(user=None)
+
+		response = self.api.get(f"/api/market/portfolio/{portfolio.pk}/")
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["id"], portfolio.pk)
+
+	def test_portfolio_access_is_public_for_reads_and_owner_only_for_writes(self):
+		other_freelancer = User.objects.create_user(
+			email="other-portfolio-owner@test.com",
+			password="pass",
+			user_type="freelancer",
+		)
+		own_portfolio = Portfolio.objects.create(
+			freelancer=self.freelancer,
+			title="Own sample",
+			description="Owned by the authenticated freelancer.",
+		)
+		other_portfolio = Portfolio.objects.create(
+			freelancer=other_freelancer,
+			title="Other sample",
+			description="Owned by another freelancer.",
+		)
+
+		self.api.force_authenticate(user=None)
+		self.assertEqual(self.api.get(f"/api/market/portfolio/{own_portfolio.pk}/").status_code, 200)
+		self.assertEqual(self.api.head(f"/api/market/portfolio/{own_portfolio.pk}/").status_code, 200)
+		self.assertEqual(
+			self.api.post("/api/market/portfolio/", {"title": "Anonymous", "description": "No access"}, format="json").status_code,
+			401,
+		)
+
+		self.api.force_authenticate(user=self.freelancer)
+		created = self.api.post(
+			"/api/market/portfolio/",
+			{
+				"title": "Created sample",
+				"description": "Created for the authenticated freelancer.",
+				"freelancer": other_freelancer.pk,
+			},
+			format="json",
+		)
+		self.assertEqual(created.status_code, 201)
+		self.assertEqual(Portfolio.objects.get(pk=created.data["id"]).freelancer, self.freelancer)
+		self.assertEqual(self.api.get(f"/api/market/portfolio/{other_portfolio.pk}/").status_code, 200)
+		self.assertEqual(
+			self.api.patch(f"/api/market/portfolio/{own_portfolio.pk}/", {"title": "Updated"}, format="json").status_code,
+			200,
+		)
+		self.assertEqual(self.api.delete(f"/api/market/portfolio/{own_portfolio.pk}/").status_code, 204)
+		self.assertEqual(
+			self.api.patch(f"/api/market/portfolio/{other_portfolio.pk}/", {"title": "Hijacked"}, format="json").status_code,
+			404,
+		)
+		self.assertEqual(self.api.delete(f"/api/market/portfolio/{other_portfolio.pk}/").status_code, 404)
+		other_portfolio.refresh_from_db()
+		self.assertEqual(other_portfolio.title, "Other sample")
+
+		self.api.force_authenticate(user=self.client_user)
+		self.assertEqual(
+			self.api.patch(f"/api/market/portfolio/{other_portfolio.pk}/", {"title": "Wrong role"}, format="json").status_code,
+			403,
+		)
+		self.assertEqual(self.api.delete(f"/api/market/portfolio/{other_portfolio.pk}/").status_code, 403)

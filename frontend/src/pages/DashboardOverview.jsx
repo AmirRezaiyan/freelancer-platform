@@ -3,6 +3,7 @@ import { ArrowUpLeft, BriefcaseBusiness, Check, FileText, FolderOpen, MessageCir
 import ResilientImage from "../components/ResilientImage";
 import { formatActivityAction, formatCurrencyToToman, formatDateIran, formatProjectCategory } from "../utils/formatters";
 import { entityId } from "../utils/dashboardData";
+import { canCreateProject } from "../utils/profileCompletion";
 
 const projectStatusLabels = {
   open: "باز",
@@ -78,6 +79,9 @@ export default function DashboardOverview({
   onOpenPortfolio,
 }) {
   const isClient = user?.user_type === "client";
+  const canCreate = canCreateProject(user);
+  const clientActionPath = canCreate ? "/dashboard/projects/create" : "/dashboard/profile";
+  const clientActionLabel = canCreate ? "ساخت پروژه" : "تکمیل پروفایل";
   const firstName = user?.first_name?.trim().split(/\s+/)[0] || "";
   const hasClientProposalData = projectProposals.some((item) => item.latest);
 
@@ -91,9 +95,9 @@ export default function DashboardOverview({
             ? "وضعیت پروژه‌ها و پیشنهادهای دریافت‌شده را یک‌جا ببینید."
             : "پروژه‌های مناسب را پیدا کنید و روند پیشنهادهایتان را دنبال کنید."}</p>
         </div>
-        <Link className="dashboard-intro-action" to={isClient ? "/dashboard/projects/create" : "/dashboard/projects"}>
+        <Link className="dashboard-intro-action" to={isClient ? clientActionPath : "/dashboard/projects"}>
           {isClient ? <Plus size={17} aria-hidden="true" /> : <Search size={17} aria-hidden="true" />}
-          {isClient ? "ساخت پروژه" : "جستجوی پروژه‌ها"}
+          {isClient ? clientActionLabel : "جستجوی پروژه‌ها"}
         </Link>
       </header>
 
@@ -168,9 +172,9 @@ export default function DashboardOverview({
                 ) : (
                   <EmptyState
                     title="هنوز پروژه‌ای برای نمایش ندارید."
-                    description="با ساخت پروژه، پیشنهادهای فریلنسرها را دریافت کنید."
-                    to="/dashboard/projects/create"
-                    action="ساخت پروژه"
+                    description={canCreate ? "با ساخت پروژه، پیشنهادهای فریلنسرها را دریافت کنید." : "برای انتشار پروژه، ابتدا پروفایل خود را تکمیل کنید."}
+                    to={clientActionPath}
+                    action={clientActionLabel}
                   />
                 )}
               </section>

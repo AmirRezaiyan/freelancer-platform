@@ -1,7 +1,10 @@
-import React, { useState } from "react";
+import React, { useContext, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, BriefcaseBusiness, CheckCircle2, CodeXml, Layers, LoaderCircle, Palette, Smartphone, X } from "lucide-react";
 import api from "../api/axios";
+import { AuthContext } from "../context/auth-context";
+import ProfileCompletionCard from "../components/ProfileCompletionCard";
+import { canCreateProject, getProfileIncompleteDetails } from "../utils/profileCompletion";
 
 const categories = [
   { value: "web", label: "توسعه وب", icon: CodeXml },
@@ -23,6 +26,10 @@ const toAsciiDigits = (value) => value.replace(/[۰-۹٠-٩]/g, (digit) => {
 
 export default function ProjectCreate() {
   const navigate = useNavigate();
+  const { user: rawUser, loading: authLoading, profileRefreshing, profileError, refreshUser, setUser } = useContext(AuthContext);
+  const user = rawUser?.user ?? rawUser;
+  const isEligible = canCreateProject(user);
+  const [profileGateError, setProfileGateError] = useState("");
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -113,6 +120,8 @@ export default function ProjectCreate() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!isEligible) return;
+
     const validationErrors = {};
     if (!form.title.trim()) validationErrors.title = "عنوان پروژه را وارد کنید.";
     if (!form.description.trim()) validationErrors.description = "توضیحات پروژه را وارد کنید.";
@@ -154,6 +163,23 @@ export default function ProjectCreate() {
       }, 2000);
 
     } catch (err) {
+      const incompleteDetails = getProfileIncompleteDetails(err);
+      if (incompleteDetails) {
+        const currentCompletion = user?.profile_completion || {};
+        setUser({
+          ...user,
+          profile_completion: incompleteDetails.profileCompletion || {
+            ...currentCompletion,
+            is_complete: false,
+            can_create_project: false,
+            missing: incompleteDetails.missingFields,
+          },
+        });
+        setProfileGateError("برای ساخت پروژه، ابتدا اطلاعات پایه پروفایل خود را تکمیل کنید.");
+        setErrors(null);
+        return;
+      }
+
       if (err.response) {
         const errorData = err.response.data;
 
@@ -642,6 +668,28 @@ export default function ProjectCreate() {
       gap: '10px',
     },
   };
+
+  if (authLoading || profileRefreshing) {
+    return <div className="app-loading" role="status">در حال بررسی امکان ساخت پروژه...</div>;
+  }
+
+  if (!isEligible) {
+    return (
+      <main style={styles.container} dir="rtl">
+        <div style={{ maxWidth: 760, margin: "40px auto" }}>
+          <ProfileCompletionCard
+            completion={user?.profile_completion}
+            userType={user?.user_type}
+            title="پروفایل خود را برای ساخت پروژه تکمیل کنید"
+            description="پس از تأیید شرایط پایه پروفایل توسط سامانه، امکان ثبت پروژه فعال می‌شود."
+            errorMessage={profileGateError || (profileError ? "دریافت وضعیت پروفایل انجام نشد؛ دوباره بررسی کنید." : "")}
+            onRetry={refreshUser}
+            retrying={profileRefreshing}
+          />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <div className="project-create-page" style={styles.container}>

@@ -14,6 +14,13 @@ from .models import Project, Proposal, ProjectMessage , Portfolio , ActivityLog 
 
 
 class ProjectBudgetValidationMixin:
+    def validate_skills(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Expected a list of skills.")
+        if any(not isinstance(skill, str) for skill in value):
+            raise serializers.ValidationError("Skill entries must be strings.")
+        return [skill.strip() for skill in value if skill.strip()]
+
     def validate(self, attrs):
         current_min = getattr(self.instance, "budget_min", None)
         current_max = getattr(self.instance, "budget_max", None)
